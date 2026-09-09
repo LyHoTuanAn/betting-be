@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+}
+
+enum Role {
+  PLAYER
+  ADMIN
+}
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+}
+enum GameType {
+  SLOT
+  DICE
+  FISH
+}
+enum LedgerType {
+  WELCOME_BONUS
+  DAILY_BONUS
+  GAME_BET
+  GAME_PAYOUT
+  DEPOSIT
+  WITHDRAW
+  REFUND
+  ADJUSTMENT
+}
+enum WalletRequestType {
+  DEPOSIT
+  WITHDRAW
+}
+enum WalletRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id String @id @default(uuid())
+  username String @unique @db.VarChar(24)
+  displayName String @db.VarChar(40)
+  passwordHash String
+  role Role @default(PLAYER)
+  status UserStatus @default(ACTIVE)
+  balance BigInt @default(50000)
+  version Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sessions Session[]
+  ledger WalletLedger[]
+  gameRounds GameRound[]
+  walletRequests WalletRequest[] @relation("WalletOwner")
+  reviewedWallet WalletRequest[] @relation("WalletReviewer")
+  dailyClaims DailyClaim[]
+}
+
+model Session {
+  id String @id @default(uuid())
+  userId String
+  refreshTokenHash String @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
+
+model WalletLedger {
+  id String @id @default(uuid())
+  userId String
+  type LedgerType
+  amount BigInt
+  balanceAfter BigInt
+  description String
+  referenceId String?
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([referenceId])
+}
+
+model GameRound {
+  id String @id @default(uuid())
+  userId String
+  requestId String
+  game GameType
+  bet BigInt
+  payout BigInt
+  net BigInt
+  result Json
+  serverProof String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, requestId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model WalletRequest {
+  id String @id @default(uuid())
+  userId String
+  type WalletRequestType
+  amount BigInt
+  status WalletRequestStatus @default(PENDING)
+  note String?
+  reviewedById String?
+  reviewedAt DateTime?
+  createdAt DateTime @default(now())
+  user User @relation("WalletOwner", fields: [userId], references: [id], onDelete: Restrict)
+  reviewedBy User? @relation("WalletReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+model DailyClaim {
+  id String @id @default(uuid())
+  userId String
+  claimDate DateTime @db.Date
+  amount BigInt
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@unique([userId, claimDate])
+}
+
+model Game {
+  key GameType @id
+  name String @db.VarChar(60)
+  subtitle String @db.VarChar(120)
+  enabled Boolean @default(true)
+  sortOrder Int @default(0)
+  minBet BigInt
+  maxBet BigInt
+  maintenanceNote String? @db.VarChar(200)
+  config Json
+  updatedAt DateTime @updatedAt
+  updatedById String?
+  @@index([enabled, sortOrder])
+}
+
+model Banner {
+  id String @id @default(uuid())
+  title String @db.VarChar(120)
+  subtitle String @db.VarChar(240)
+  image String @db.VarChar(255)
+  tag String? @db.VarChar(40)
+  actionScreen String? @db.VarChar(50)
+  actionUrl String? @db.VarChar(255)
+  actionLabel String? @db.VarChar(60)
+  enabled Boolean @default(true)
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([enabled, sortOrder])
+}
+
+model Event {
+  id String @id @default(uuid())
+  title String @db.VarChar(150)
+  category String @db.VarChar(50)
+  badge String? @db.VarChar(50)
+  reward String @db.VarChar(120)
+  desc String @db.Text
+  image String @db.VarChar(255)
+  status String @default("ACTIVE") @db.VarChar(20)
+  startDate String? @db.VarChar(40)
+  endDate String? @db.VarChar(40)
+  actionType String? @db.VarChar(50)
+  actionUrl String? @db.VarChar(255)
+  actionLabel String? @db.VarChar(60)
+  enabled Boolean @default(true)
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([enabled, sortOrder])
+}
