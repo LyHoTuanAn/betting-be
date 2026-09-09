@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: goldzone-backend
+    env: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_DAYS
+        value: "30"
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: FISH_ROOM_CAPACITY
+        value: "6"
+      - key: FISH_READY_TO_START
+        value: "4"
+      - key: FISH_START_COUNTDOWN_MS
+        value: "30000"
