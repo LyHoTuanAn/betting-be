@@ -108,6 +108,24 @@ describe('Nạp tiền qua email Timo (SRS mục 23)',()=>{
   expect(updated.resolvedById).toBe(adminId);
  });
 
+ it('nội dung khớp nhiều người chơi thì để UNMATCHED, không đoán',async()=>{
+  // Hai người chơi cùng xuất hiện trong một nội dung chuyển khoản nhiễu: chọn
+  // ai cũng là phỏng đoán, nên tiền phải nằm lại chờ admin.
+  const passwordHash=await bcrypt.hash('secret123',10);
+  const other=`wf2_${run}`;
+  const created=await prisma.user.create({data:{username:other,displayName:'Wallet Other',passwordHash,balance:0n}});
+  const before=await balances(playerId);
+
+  const outcome=await recordBankDeposit({
+    bankTransactionId:txn('004'),amount:300_000,transferContent:`CT DEN ${player} chuyen cho ${other}`,
+    transactionTime:new Date(),emailSubject:'Timo'
+  });
+
+  expect(outcome.result).toBe('UNMATCHED');
+  expect(await balances(playerId)).toEqual(before);
+  expect(Number((await prisma.user.findUniqueOrThrow({where:{id:created.id}})).balance)).toBe(0);
+ });
+
  it('email tiền vào thật đi hết chặng parse → cộng tiền',async()=>{
   const before=await balances(playerId);
   const parsed=parseBankEmail({

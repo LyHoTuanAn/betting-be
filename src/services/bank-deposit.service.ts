@@ -9,18 +9,31 @@ export type RecordOutcome=
   |{result:'UNMATCHED';depositId:string;transferContent:string;amount:number};
 
 /** Tìm người chơi theo nội dung chuyển khoản, ưu tiên ứng viên khớp cả chuỗi. */
+/**
+ * Tìm người chơi theo nội dung chuyển khoản.
+ *
+ * Luật của SRS mục 5 là khớp nguyên chuỗi, và luật đó luôn thắng. Chỉ khi nội
+ * dung có nhiễu (ngân hàng chèn tiền tố/hậu tố) mới xét tới từng token — và khi
+ * đó bắt buộc phải có ĐÚNG MỘT người chơi khớp. Username được phép toàn chữ số,
+ * mà mã tham chiếu ngân hàng cũng toàn chữ số, nên nếu có từ hai người khớp thì
+ * mọi lựa chọn đều là phỏng đoán: thà để UNMATCHED cho admin quyết định còn hơn
+ * cộng tiền thật vào nhầm tài khoản.
+ */
 async function findUserByTransferContent(tx:Prisma.TransactionClient,transferContent:string){
   const candidates=extractUsernameCandidates(transferContent);
   if(!candidates.length)return null;
   const users=await tx.user.findMany({where:{username:{in:candidates}},select:{id:true,username:true,status:true}});
   if(!users.length)return null;
-  // Giữ đúng thứ tự ưu tiên của candidates chứ không theo thứ tự CSDL trả về:
-  // ứng viên khớp nguyên nội dung (luật của SRS) phải thắng token bắt được thêm.
-  for(const candidate of candidates){
-    const user=users.find(row=>row.username===candidate);
-    if(user)return user;
+
+  const [whole]=candidates;
+  const exact=users.find(row=>row.username===whole);
+  if(exact&&whole===transferContent.trim().toLowerCase())return exact;
+
+  if(users.length>1){
+    console.warn(`[bank-deposit] nội dung "${transferContent}" khớp ${users.length} người chơi (${users.map(u=>u.username).join(', ')}) — để UNMATCHED`);
+    return null;
   }
-  return null;
+  return users[0]??null;
 }
 
 /**
