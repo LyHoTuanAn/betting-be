@@ -74,7 +74,7 @@ export async function recordBankDeposit(parsed:ParsedDeposit):Promise<RecordOutc
         description:`Nạp tiền qua ${parsed.bankTransactionId}`,referenceId:deposit.id
       }});
       return {result:'COMPLETED',depositId:deposit.id,userId:user.id,username:user.username,amount:parsed.amount} as const;
-    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+    },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
   }catch(error){
     // Hai lần đọc cùng một email chạm nhau: bản ghi kia đã thắng, coi như trùng.
     if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==='P2002')
@@ -105,7 +105,7 @@ export async function matchDepositManually(adminId:string,depositId:string,usern
     return tx.bankDeposit.update({where:{id:depositId},data:{
       status:'COMPLETED',userId:user.id,matchedAt:new Date(),resolvedById:adminId,resolvedAt:new Date()
     }});
-  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
 }
 
 /** Tự động khớp các giao dịch nạp tiền đang UNMATCHED khi người chơi đăng ký tài khoản. */
@@ -126,7 +126,7 @@ export async function autoMatchPendingDepositsForUser(userId:string,username:str
             description:`Nạp tiền qua ${deposit.bankTransactionId} (tự động khớp khi đăng ký)`,referenceId:deposit.id
           }});
           await tx.bankDeposit.update({where:{id:deposit.id},data:{status:'COMPLETED',userId,matchedAt:new Date()}});
-        },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+        },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
       }catch(err){
         console.error('[bank-deposit] Lỗi tự động khớp nạp tiền khi đăng ký:',err);
       }

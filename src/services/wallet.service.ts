@@ -26,7 +26,7 @@ export async function claimDaily(userId:string){
     const user=await tx.user.update({where:{id:userId},data:{balance:{increment:amount},version:{increment:1}}});
     await tx.walletLedger.create({data:{userId,type:'DAILY_BONUS',amount,balanceAfter:user.balance,description:'Quà đăng nhập hằng ngày',referenceId:claim.id}});
     return {amount:Number(amount),...walletView(user),nextAt:new Date(claimDate.getTime()+86_400_000)};
-  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});}
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});}
   catch(error){if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==='P2002')throw new AppError(409,'Bạn đã nhận quà hôm nay','DAILY_ALREADY_CLAIMED');throw error;}
 }
 
@@ -56,7 +56,7 @@ export async function createWithdrawal(userId:string,input:WithdrawalInput){
       userId,type:'WITHDRAW',amount,
       bankName:input.bankName,accountNumber:input.accountNumber,accountName:input.accountName
     }});
-  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
 }
 
 async function loadPendingWithdrawal(tx:Prisma.TransactionClient,id:string){
@@ -84,7 +84,7 @@ export async function approveWithdrawal(adminId:string,id:string,note?:string){
       description:'Rút tiền đã được duyệt',referenceId:request.id
     }});
     return tx.walletRequest.update({where:{id},data:{status:'APPROVED',note,reviewedById:adminId,reviewedAt:new Date()}});
-  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
 }
 
 /** Từ chối và mở khoá tiền (SRS mục 16): `balance` không đổi, chỉ nhả khoá. */
@@ -96,5 +96,5 @@ export async function rejectWithdrawal(adminId:string,id:string,note?:string){
       WHERE \`id\`=${request.userId} AND \`lockedBalance\`>=${request.amount}`;
     if(!released)throw new AppError(409,'Số tiền khoá không khớp, không thể từ chối','LOCKED_BALANCE_MISMATCH');
     return tx.walletRequest.update({where:{id},data:{status:'REJECTED',note,reviewedById:adminId,reviewedAt:new Date()}});
-  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+  },{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
 }

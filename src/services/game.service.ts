@@ -163,7 +163,7 @@ export async function play(userId:string,requestId:string,outcome:Outcome) {
   if(!/^[a-zA-Z0-9_-]{8,80}$/.test(requestId))throw new AppError(422,'Idempotency key không hợp lệ','INVALID_IDEMPOTENCY_KEY');
   for(let attempt=0;attempt<3;attempt++){
     try{
-      const round=await prisma.$transaction(tx=>execute(tx,userId,requestId,outcome),{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+      const round=await prisma.$transaction(tx=>execute(tx,userId,requestId,outcome),{isolationLevel:Prisma.TransactionIsolationLevel.RepeatableRead});
       const user=await prisma.user.findUniqueOrThrow({where:{id:userId},select:{balance:true}});
       return {round,balance:Number(user.balance)};
     }catch(error){
