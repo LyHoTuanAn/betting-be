@@ -17,4 +17,20 @@ for (const g of games) {
 }
 console.log(`seeded ${games.length} games`);
 
+// Tài khoản Timo nhận tiền nạp (SRS mục 2.1). Chỉ tạo khi chưa có tài khoản nào
+// đang bật — seed chạy lại không được ghi đè số tài khoản admin đã đổi.
+const activeBankAccount = await prisma.bankAccount.findFirst({ where: { isActive: true } });
+if (!activeBankAccount) {
+  await prisma.bankAccount.create({
+    data: {
+      bankName: 'Timo',
+      accountNumber: '9021000012345',
+      accountName: 'CONG TY GOLDZONE',
+      transferContentDescription: 'Ghi ĐÚNG username của bạn trong nội dung chuyển khoản, không thêm chữ nào khác.',
+      isActive: true
+    }
+  });
+  console.log('seeded Timo bank account (hãy đổi sang số tài khoản thật ở trang quản trị)');
+}
+
 await prisma.$disconnect();

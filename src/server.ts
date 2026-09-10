@@ -5,6 +5,7 @@ import {WebSocketServer,type RawData} from 'ws';
 import jwt from 'jsonwebtoken';
 import {joinFishRoom,shootFish,tickFishRooms} from './services/fish-room.service.js';
 import {requireEnabledGame} from './services/game-catalog.service.js';
+import {startEmailReader,stopEmailReader} from './services/email-reader.service.js';
 
 const server=createApp().listen(config.PORT,()=>console.log(`GoldZone API listening on http://localhost:${config.PORT}`));
 const wss=new WebSocketServer({server,path:'/ws/fish'});
@@ -44,5 +45,7 @@ wss.on('connection',(socket,request)=>{
   }catch{socket.close(1008,'Unauthorized')}
 });
 const tick=setInterval(tickFishRooms,1000/12);
-const shutdown=async()=>{server.close();await prisma.$disconnect();process.exit(0)};
+// Worker đọc email giao dịch Timo (SRS mục 18). Tự bỏ qua nếu chưa bật trong .env.
+startEmailReader();
+const shutdown=async()=>{server.close();stopEmailReader();await prisma.$disconnect();process.exit(0)};
 process.on('SIGINT',()=>{clearInterval(tick);wss.close();void shutdown()});process.on('SIGTERM',()=>{clearInterval(tick);wss.close();void shutdown()});
