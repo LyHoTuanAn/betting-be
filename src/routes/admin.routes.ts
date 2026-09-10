@@ -3,7 +3,9 @@ import {z} from 'zod';
 import {GameType} from '@prisma/client';
 import {asyncRoute,jsonSafe,AppError} from '../lib/http.js';
 import {prisma} from '../lib/prisma.js';
-import {reviewWalletRequest} from '../services/wallet.service.js';
+import {approveWithdrawal,rejectWithdrawal} from '../services/wallet.service.js';
+import {matchDepositManually} from '../services/bank-deposit.service.js';
+import {readerStats} from '../services/email-reader.service.js';
 import {loadGames,invalidateGameCache,configSchemas,gameDefaults,type GameConfig} from '../services/game-catalog.service.js';
 import {slotRtp} from '../services/game.service.js';
 import {getAllBannersAdmin, getAllEventsAdmin} from '../services/content.service.js';
@@ -17,14 +19,15 @@ const theoreticalRtp=(key:GameType,config:GameConfig)=>
   :(config as GameConfig<'FISH'>).rtp;
 
 router.get('/stats',asyncRoute(async(_req,res)=>{
-  const [users,suspended,pending,rounds,wagered] = await Promise.all([
+  const [users,suspended,pending,unmatched,rounds,wagered] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({where:{status:'SUSPENDED'}}),
-    prisma.walletRequest.count({where:{status:'PENDING'}}),
+    prisma.walletRequest.count({where:{status:'PENDING',type:'WITHDRAW'}}),
+    prisma.bankDeposit.count({where:{status:'UNMATCHED'}}),
     prisma.gameRound.count(),
     prisma.gameRound.aggregate({_sum:{bet:true,payout:true,net:true}})
   ]);
-  res.json({users,suspended,pendingWalletRequests:pending,rounds,bet:Number(wagered._sum.bet||0),payout:Number(wagered._sum.payout||0),houseNet:-Number(wagered._sum.net||0)});
+  res.json({users,suspended,pendingWithdrawals:pending,unmatchedDeposits:unmatched,rounds,bet:Number(wagered._sum.bet||0),payout:Number(wagered._sum.payout||0),houseNet:-Number(wagered._sum.net||0)});
 }));
 
 router.get('/games',asyncRoute(async(_req,res)=>{
@@ -94,8 +97,87 @@ router.get('/users',asyncRoute(async(req,res)=>{
   res.json({items:jsonSafe(items)});
 }));
 
-router.get('/wallet/requests',asyncRoute(async(req,res)=>{const status=z.enum(['PENDING','APPROVED','REJECTED']).optional().parse(req.query.status),items=await prisma.walletRequest.findMany({where:status?{status}:{},include:{user:{select:{username:true,displayName:true}}},orderBy:{createdAt:'asc'},take:200});res.json({items:jsonSafe(items)})}));
-router.patch('/wallet/requests/:id',asyncRoute(async(req,res)=>{const input=z.object({status:z.enum(['APPROVED','REJECTED']),note:z.string().trim().max(500).optional()}).parse(req.body),request=await reviewWalletRequest(req.auth!.userId,String(req.params.id),input.status,input.note);res.json({request:jsonSafe(request)})}));
+// ==================== RÚT TIỀN (SRS mục 13-16) ====================
+const reviewNote=z.object({note:z.string().trim().max(500).optional()});
+
+router.get('/withdrawals',asyncRoute(async(req,res)=>{
+  const status=z.enum(['PENDING','APPROVED','REJECTED']).optional().parse(req.query.status);
+  const items=await prisma.walletRequest.findMany({
+    where:{type:'WITHDRAW',...(status?{status}:{})},
+    include:{user:{select:{username:true,displayName:true}},reviewedBy:{select:{username:true}}},
+    // Chờ duyệt xếp cũ trước để admin xử lý theo thứ tự người chơi đã gửi.
+    orderBy:{createdAt:status==='PENDING'?'asc':'desc'},take:200
+  });
+  res.json({items:jsonSafe(items)});
+}));
+
+router.post('/withdrawals/:id/approve',asyncRoute(async(req,res)=>{
+  const {note}=reviewNote.parse(req.body??{});
+  const request=await approveWithdrawal(req.auth!.userId,String(req.params.id),note);
+  res.json({request:jsonSafe(request)});
+}));
+
+router.post('/withdrawals/:id/reject',asyncRoute(async(req,res)=>{
+  const {note}=reviewNote.parse(req.body??{});
+  const request=await rejectWithdrawal(req.auth!.userId,String(req.params.id),note);
+  res.json({request:jsonSafe(request)});
+}));
+
+// ==================== NẠP TIỀN (SRS mục 20) ====================
+router.get('/deposits',asyncRoute(async(req,res)=>{
+  const query=z.object({
+    status:z.enum(['ALL','COMPLETED','UNMATCHED']).default('ALL'),
+    limit:z.coerce.number().int().min(1).max(200).default(100)
+  }).parse(req.query);
+  const items=await prisma.bankDeposit.findMany({
+    where:query.status==='ALL'?{}:{status:query.status},
+    include:{user:{select:{username:true,displayName:true}},resolvedBy:{select:{username:true}}},
+    orderBy:{createdAt:'desc'},take:query.limit
+  });
+  res.json({items:jsonSafe(items)});
+}));
+
+router.get('/deposits/unmatched',asyncRoute(async(_req,res)=>{
+  const items=await prisma.bankDeposit.findMany({where:{status:'UNMATCHED'},orderBy:{createdAt:'desc'},take:200});
+  res.json({items:jsonSafe(items)});
+}));
+
+/** Gán tay một giao dịch UNMATCHED cho người chơi. */
+router.post('/deposits/:id/match',asyncRoute(async(req,res)=>{
+  const {username}=z.object({username:z.string().trim().toLowerCase().regex(/^[a-z0-9_]{4,24}$/)}).parse(req.body);
+  const deposit=await matchDepositManually(req.auth!.userId,String(req.params.id),username);
+  res.json({deposit:jsonSafe(deposit)});
+}));
+
+/** Sức khoẻ worker đọc email — admin cần biết ngay khi nó ngừng chạy. */
+router.get('/email-reader',asyncRoute(async(_req,res)=>res.json(readerStats())));
+
+// ==================== TÀI KHOẢN NHẬN TIỀN (SRS mục 17) ====================
+router.get('/bank-account',asyncRoute(async(_req,res)=>{
+  const account=await prisma.bankAccount.findFirst({where:{isActive:true},orderBy:{createdAt:'desc'}});
+  res.json({account:account?jsonSafe(account):null});
+}));
+
+const bankAccountSchema=z.object({
+  bankName:z.string().trim().min(2).max(80),
+  accountNumber:z.string().trim().regex(/^[0-9]{6,32}$/,'Số tài khoản chỉ gồm 6-32 chữ số'),
+  accountName:z.string().trim().min(2).max(80),
+  transferContentDescription:z.string().trim().max(200).default('Ghi đúng username của bạn trong nội dung chuyển khoản')
+});
+
+/**
+ * Chỉ giữ đúng một tài khoản đang bật (SRS: MVP chỉ cần 1 tài khoản Timo).
+ * Tắt hết các tài khoản cũ rồi mới tạo bản mới, thay vì sửa đè, để lịch sử vẫn
+ * tra được giao dịch đã chuyển vào số tài khoản nào.
+ */
+router.put('/bank-account',asyncRoute(async(req,res)=>{
+  const input=bankAccountSchema.parse(req.body);
+  const account=await prisma.$transaction(async tx=>{
+    await tx.bankAccount.updateMany({where:{isActive:true},data:{isActive:false}});
+    return tx.bankAccount.create({data:{...input,isActive:true}});
+  });
+  res.json({account:jsonSafe(account)});
+}));
 router.patch('/users/:id/status',asyncRoute(async(req,res)=>{const {status}=z.object({status:z.enum(['ACTIVE','SUSPENDED'])}).parse(req.body),user=await prisma.user.update({where:{id:String(req.params.id)},data:{status}});if(status==='SUSPENDED')await prisma.session.updateMany({where:{userId:user.id,revokedAt:null},data:{revokedAt:new Date()}});res.json({user:{id:user.id,status:user.status}})}));
 
 // ==================== BANNERS ====================

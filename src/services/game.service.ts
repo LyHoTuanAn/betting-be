@@ -77,8 +77,14 @@ async function execute(tx:Tx,userId:string,requestId:string,outcome:Outcome) {
     if(duplicate.game!==outcome.game||duplicate.bet!==BigInt(outcome.bet)||old.side!==fresh.side||old.fishKind!==fresh.fishKind)throw new AppError(409,'Idempotency key đã được dùng cho yêu cầu khác','IDEMPOTENCY_CONFLICT');
     return duplicate;
   }
-  const debited=await tx.user.updateMany({where:{id:userId,status:'ACTIVE',balance:{gte:BigInt(outcome.bet)}},data:{balance:{decrement:BigInt(outcome.bet)},version:{increment:1}}});
-  if(!debited.count)throw new AppError(409,'Số dư không đủ hoặc tài khoản bị khóa','INSUFFICIENT_BALANCE');
+  // Tiền đang bị khoá cho yêu cầu rút không được đem đi cược, nên điều kiện là
+  // số dư KHẢ DỤNG chứ không phải `balance`. Prisma không so sánh được hai cột
+  // trong `where` nên phải viết thẳng SQL.
+  const bet=BigInt(outcome.bet);
+  const debited=await tx.$executeRaw`
+    UPDATE \`User\` SET \`balance\`=\`balance\`-${bet}, \`version\`=\`version\`+1
+    WHERE \`id\`=${userId} AND \`status\`='ACTIVE' AND \`balance\`-\`lockedBalance\`>=${bet}`;
+  if(!debited)throw new AppError(409,'Số dư không đủ hoặc tài khoản bị khóa','INSUFFICIENT_BALANCE');
   const afterBet=await tx.user.findUniqueOrThrow({where:{id:userId},select:{balance:true}});
   const round=await tx.gameRound.create({data:{userId,requestId,game:outcome.game,bet:outcome.bet,payout:outcome.payout,net:outcome.payout-outcome.bet,result:outcome.result,serverProof:outcome.serverProof}});
   await tx.walletLedger.create({data:{userId,type:'GAME_BET',amount:-BigInt(outcome.bet),balanceAfter:afterBet.balance,description:`Cược ${outcome.game}`,referenceId:round.id}});

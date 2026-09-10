@@ -33,37 +33,10 @@ export const DEFAULT_BANNERS = [
     actionLabel: 'Săn Boss',
     enabled: true,
     sortOrder: 3
-  },
-  {
-    title: 'ĐIỂM DANH NHẬN 100K VÀNG',
-    subtitle: 'Đăng nhập mỗi ngày nhận ngay 100.000 vàng miễn phí',
-    image: '/assets/home-slot.webp',
-    tag: 'SỰ KIỆN',
-    actionScreen: 'events',
-    actionUrl: '',
-    actionLabel: 'Nhận Ngay',
-    enabled: true,
-    sortOrder: 4
   }
 ];
 
 export const DEFAULT_EVENTS = [
-  {
-    title: 'Điểm Danh Nhận Thưởng Mỗi Ngày',
-    category: 'checkin',
-    badge: 'HÀNG NGÀY',
-    reward: '100,000 Vàng',
-    desc: 'Mỗi ngày đăng nhập vào GoldZone sẽ nhận ngay 100.000 vàng miễn phí vào tài khoản!',
-    image: '/assets/home-slot.webp',
-    status: 'ACTIVE',
-    startDate: '2026-01-01',
-    endDate: '2026-12-31',
-    actionType: 'checkin',
-    actionUrl: '',
-    actionLabel: 'Điểm danh nhận ngay',
-    enabled: true,
-    sortOrder: 1
-  },
   {
     title: 'Nạp Lần Đầu Nhân Đôi Thưởng',
     category: 'deposit',
