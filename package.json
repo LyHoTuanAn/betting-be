@@ -13,7 +13,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "db:admin": "tsx prisma/create-admin.ts"
+    "db:admin": "tsx prisma/create-admin.ts",
+    "email:check": "tsx src/scripts/email-check.ts"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",

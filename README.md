@@ -114,7 +114,13 @@ chiếu — ví dụ `Mô tả: gghbb FT26253904002496`, trong đó `gghbb` là 
 `FT26253904002496` là `bankTransactionId`.
 
 Worker mặc định TẮT; bật bằng `EMAIL_READER_ENABLED=1` cùng các biến `IMAP_*`
-trong `.env` (Gmail cần App Password). Xem `.env.example`.
+trong `.env` (Gmail cần App Password, xem `.env.example`). Thiếu thông tin đăng
+nhập thì worker chỉ ghi cảnh báo lúc khởi động chứ không làm sập server.
+
+`npm run email:check` kiểm tra cấu hình IMAP mà không đụng vào tiền: đăng nhập,
+liệt kê email Timo gần đây, cho biết mỗi email sẽ được cộng cho ai — nhưng không
+đánh dấu đã đọc, không ghi CSDL và không cộng số dư. Chạy lệnh này trước khi bật
+worker thật. Thêm tham số số ngày để nhìn xa hơn: `npm run email:check -- 30`.
 
 **Rút tiền** làm tay: người chơi gửi yêu cầu kèm thông tin ngân hàng, hệ thống
 khoá tiền bằng `User.lockedBalance` (số tiêu được = `balance - lockedBalance`,

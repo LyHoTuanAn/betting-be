@@ -23,14 +23,14 @@ const activeBankAccount = await prisma.bankAccount.findFirst({ where: { isActive
 if (!activeBankAccount) {
   await prisma.bankAccount.create({
     data: {
-      bankName: 'Timo',
-      accountNumber: '9021000012345',
-      accountName: 'CONG TY GOLDZONE',
-      transferContentDescription: 'Ghi ĐÚNG username của bạn trong nội dung chuyển khoản, không thêm chữ nào khác.',
+      bankName: 'Timo by BVBank',
+      accountNumber: '0941400924',
+      accountName: 'LY HO TUAN AN',
+      transferContentDescription: 'Ghi ĐÚNG username của bạn trong nội dung chuyển khoản. Ngân hàng sẽ tự nối thêm mã giao dịch phía sau, bạn không cần xoá.',
       isActive: true
     }
   });
-  console.log('seeded Timo bank account (hãy đổi sang số tài khoản thật ở trang quản trị)');
+  console.log('seeded Timo bank account 0941400924');
 }
 
 await prisma.$disconnect();
