@@ -5,7 +5,7 @@ import {requireEnabledGame,type GameConfig} from './game-catalog.service.js';
 
 const ROOM_CAPACITY=Number(process.env.FISH_ROOM_CAPACITY||config.FISH_ROOM_CAPACITY||6);
 const READY_TO_START=Number(process.env.FISH_READY_TO_START||config.FISH_READY_TO_START||4);
-const START_COUNTDOWN_MS=Number(process.env.FISH_START_COUNTDOWN_MS||config.FISH_START_COUNTDOWN_MS||30_000);
+const START_COUNTDOWN_MS=Number(process.env.FISH_START_COUNTDOWN_MS||config.FISH_START_COUNTDOWN_MS||7_000);
 
 type FishKind=keyof typeof fishCatalog;
 
@@ -50,7 +50,16 @@ type Fish={
   radius:number;value:number;hp:number;maxHp:number;
   wanderAmp:number;wanderFreq:number;wanderPhase:number;born:number;tag:'common'|'school'|'rare';
 };
-type Player={id:string;userId:string;socket:WebSocket;ready:boolean};
+type Player={
+  id:string;
+  userId:string;
+  username:string;
+  displayName:string;
+  avatar?:string;
+  seatIndex:number;
+  socket:WebSocket;
+  ready:boolean;
+};
 type Room={
   id:string;status:'waiting'|'playing';players:Map<string,Player>;fish:Fish[];
   lastTick:number;startedAt:number;countdownEndsAt:number|null;
@@ -104,7 +113,15 @@ const broadcast=(room:Room,message:unknown)=>room.players.forEach(player=>send(p
 
 const lobbyView=(room:Room)=>({
   type:'lobby',roomId:room.id,status:room.status,capacity:ROOM_CAPACITY,needReady:READY_TO_START,
-  players:[...room.players.values()].map(p=>({id:p.id,ready:p.ready})),
+  players:[...room.players.values()].map(p=>({
+    id:p.id,
+    userId:p.userId,
+    username:p.username,
+    displayName:p.displayName,
+    avatar:p.avatar,
+    seatIndex:p.seatIndex,
+    ready:p.ready
+  })),
   readyCount:[...room.players.values()].filter(p=>p.ready).length,
   countdownMs:room.countdownEndsAt?Math.max(0,room.countdownEndsAt-Date.now()):null
 });
@@ -114,15 +131,43 @@ const stateView=(room:Room)=>({
   type:'state',roomId:room.id,status:room.status,capacity:ROOM_CAPACITY,
   stage:stageOf(room).name,
   stageMs:Math.max(0,room.segmentEndsAt-Date.now()),
-  players:[...room.players.values()].map(p=>({id:p.id})),
+  players:[...room.players.values()].map(p=>({
+    id:p.id,
+    userId:p.userId,
+    username:p.username,
+    displayName:p.displayName,
+    avatar:p.avatar,
+    seatIndex:p.seatIndex
+  })),
   fish:room.fish.map(f=>({id:f.id,kind:f.kind,x:round(f.x),y:round(f.y),heading:round(f.heading),hp:Math.max(0,Math.round(f.hp)),maxHp:f.maxHp,value:f.value,tag:f.tag}))
 });
 
-export function joinFishRoom(userId:string,socket:WebSocket){
+type UserMeta={id:string;username?:string;displayName?:string;avatar?:string};
+
+export function joinFishRoom(user:UserMeta|string,socket:WebSocket){
   const room=findRoom();
-  const player:Player={id:`p${room.players.size+1}-${Math.random().toString(36).slice(2,7)}`,userId,socket,ready:false};
+  const userId=typeof user==='string'?user:user.id;
+  const username=typeof user==='string'?`player_${userId.slice(0,5)}`:(user.username||'player');
+  const displayName=typeof user==='string'?'Người chơi':(user.displayName||user.username||'Người chơi');
+  const avatar=typeof user==='string'?'/assets/home-avatar.webp':(user.avatar||'/assets/home-avatar.webp');
+
+  const takenSeats=new Set([...room.players.values()].map(p=>p.seatIndex));
+  const PREFERRED_SEATS=[1,0,2,4,5,3];
+  let seatIndex=PREFERRED_SEATS.find(s=>!takenSeats.has(s))??0;
+
+  const player:Player={
+    id:`p${room.players.size+1}-${Math.random().toString(36).slice(2,7)}`,
+    userId,
+    username,
+    displayName,
+    avatar,
+    seatIndex,
+    socket,
+    ready:false
+  };
+
   room.players.set(player.id,player);
-  send(socket,{...lobbyView(room),type:'joined',playerId:player.id});
+  send(socket,{...lobbyView(room),type:'joined',playerId:player.id,seatIndex:player.seatIndex});
   if(room.status==='playing')send(socket,stateView(room));
   broadcast(room,lobbyView(room));
 
@@ -211,7 +256,7 @@ export function tickFishRooms(){
  */
 export async function shootFish(room:Room,userId:string,playerId:string,input:{x:number;y:number;power:number}){
   if(room.status!=='playing')throw new Error('ROOM_NOT_PLAYING');
-  // Admin có thể tắt game giữa lúc phòng đang chạy; chặn ngay ở phát bắn tiếp theo.
+  // Admin cA3 th t_t game gi_a lAc phAng `ang chy; chn ngay Y phAt b_n tip theo.
   const config=(await requireEnabledGame('FISH')).config as GameConfig<'FISH'>;
   const x=Math.max(0,Math.min(1,input.x)),y=Math.max(0,Math.min(1,input.y));
   const target=room.fish
@@ -243,7 +288,21 @@ export async function shootFish(room:Room,userId:string,playerId:string,input:{x
     throw error;
   }
 
-  broadcast(room,{type:'shot',playerId,aimX:x,aimY:y,fishId:target?.id||null,fishKind:target?.kind||'miss',damage:Math.round(damage),killed,payout:Number(result.round.payout)});
   const shooter=room.players.get(playerId);
+  broadcast(room,{
+    type:'shot',
+    playerId,
+    userId,
+    displayName:shooter?.displayName||'Người chơi',
+    seatIndex:shooter?.seatIndex??0,
+    aimX:x,
+    aimY:y,
+    power:input.power,
+    fishId:target?.id||null,
+    fishKind:target?.kind||'miss',
+    damage:Math.round(damage),
+    killed,
+    payout:Number(result.round.payout)
+  });
   if(shooter)send(shooter.socket,{type:'wallet',balance:result.balance});
 }
