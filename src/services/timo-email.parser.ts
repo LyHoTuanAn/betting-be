@@ -19,7 +19,7 @@
  *    bản đã bỏ dấu, thay vì nhồi lớp dấu vào từng regex.
  */
 
-export type RawEmail={from?:string;subject?:string;text?:string;html?:string;date:Date};
+export type RawEmail={from?:string;subject?:string;text?:string;html?:string;date:Date;messageId?:string};
 export type ParsedDeposit={bankTransactionId:string;amount:number;transferContent:string;transactionTime:Date;emailSubject:string};
 
 /** Giới hạn username ở auth.routes.ts — dùng lại để dò username trong nội dung CK. */
@@ -129,9 +129,12 @@ export function parseBankEmail(email:RawEmail):ParsedDeposit|null{
   const amountRaw=creditMatch?.[1]??body.match(AMOUNT_LABEL)?.[1];
   const contentMatch=body.match(CONTENT_LABEL);
   const txnMatch=body.match(TXN_LABEL)||body.match(BARE_TXN);
+  const fallbackTxnId=email.messageId?email.messageId.replace(/^<|>$/g,'').trim().slice(0,80):null;
+  const bankTransactionId=txnMatch?.[1]?.trim().toUpperCase()||fallbackTxnId;
+
   // Thiếu bất kỳ mảnh nào trong ba mảnh này thì không đủ căn cứ để cộng tiền,
   // và cũng không được đoán — bỏ qua email, để nó nằm lại hộp thư cho admin.
-  if(!amountRaw||!contentMatch?.[1]||!txnMatch?.[1])return null;
+  if(!amountRaw||!contentMatch?.[1]||!bankTransactionId)return null;
 
   const amount=parseAmount(amountRaw);
   if(!Number.isFinite(amount)||amount<=0)return null;
@@ -149,7 +152,7 @@ export function parseBankEmail(email:RawEmail):ParsedDeposit|null{
 
   const timeRaw=body.match(TIME_LABEL)?.[1]??body.match(TIME_BARE)?.[1];
   return {
-    bankTransactionId:txnMatch[1].trim().toUpperCase(),
+    bankTransactionId,
     amount:Math.round(amount),
     transferContent:transferContent.slice(0,255),
     transactionTime:timeRaw?parseVnTime(timeRaw,email.date):email.date,
