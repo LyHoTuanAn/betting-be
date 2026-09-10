@@ -72,7 +72,8 @@ async function main(){
       const deposit=parseBankEmail({
         from,subject:mail.subject,text:mail.text,
         html:typeof mail.html==='string'?mail.html:undefined,
-        date:mail.date||new Date()
+        date:mail.date||new Date(),
+        messageId:mail.messageId
       });
 
       console.log(`── ${mail.date?.toLocaleString('vi-VN')} · ${from}`);

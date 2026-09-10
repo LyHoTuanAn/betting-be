@@ -112,6 +112,25 @@ Nội dung: teddy123`
   })).toBeNull();
  });
 
+ it('dùng messageId làm mã giao dịch khi nội dung không có mã FT (chuyển khoản nội bộ Timo)',()=>{
+  const parsed=parseBankEmail({
+   from:'support@timo.vn',
+   subject:'Thông báo thay đổi số dư tài khoản',
+   date:received,
+   messageId:'<2112188944.385289.1789024044468@notification-management-678464f89c-sf4pq>',
+   html:`<p>Tài khoản Spend Account vừa tăng 5.000 VND vào 10/09/2026 14:07.
+Số dư hiện tại: 14.000 VND.</p>
+<p>Mô tả: player1234.</p>`
+  });
+  expect(parsed).toEqual({
+   bankTransactionId:'2112188944.385289.1789024044468@notification-management-678464f89c-sf4pq',
+   amount:5000,
+   transferContent:'player1234',
+   transactionTime:new Date('2026-09-10T14:07:00+07:00'),
+   emailSubject:'Thông báo thay đổi số dư tài khoản'
+  });
+ });
+
  it('thiếu thời gian thì dùng ngày nhận email',()=>{
   const parsed=parseBankEmail({
    from:'no-reply@timo.vn',

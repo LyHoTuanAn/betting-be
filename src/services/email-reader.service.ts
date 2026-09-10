@@ -62,7 +62,8 @@ export async function pollOnce():Promise<ReaderStats>{
           const parsed=parseBankEmail({
             from,subject:mail.subject,text:mail.text,
             html:typeof mail.html==='string'?mail.html:undefined,
-            date:mail.date||new Date()
+            date:mail.date||new Date(),
+            messageId:mail.messageId
           });
           if(!parsed){
             stats.skipped++;
