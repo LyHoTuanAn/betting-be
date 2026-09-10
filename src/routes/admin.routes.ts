@@ -180,6 +180,31 @@ router.put('/bank-account',asyncRoute(async(req,res)=>{
 }));
 router.patch('/users/:id/status',asyncRoute(async(req,res)=>{const {status}=z.object({status:z.enum(['ACTIVE','SUSPENDED'])}).parse(req.body),user=await prisma.user.update({where:{id:String(req.params.id)},data:{status}});if(status==='SUSPENDED')await prisma.session.updateMany({where:{userId:user.id,revokedAt:null},data:{revokedAt:new Date()}});res.json({user:{id:user.id,status:user.status}})}));
 
+/**
+ * Xoá vĩnh viễn một tài khoản. Mọi quan hệ của User đều đang để onDelete:
+ * Restrict (sổ quỹ, ván chơi, yêu cầu nạp/rút, điểm danh) nên phải dọn con
+ * trước trong cùng một transaction, nếu không MySQL sẽ chặn ở khoá ngoại.
+ */
+router.delete('/users/:id',asyncRoute(async(req,res)=>{
+  const id=String(req.params.id);
+  const user=await prisma.user.findUnique({where:{id},select:{id:true,username:true,role:true}});
+  if(!user)throw new AppError(404,'Không tìm thấy tài khoản này','USER_NOT_FOUND');
+  if(user.id===req.auth!.userId)throw new AppError(422,'Không thể tự xoá tài khoản đang đăng nhập','SELF_DELETE');
+  if(user.role==='ADMIN')throw new AppError(422,'Không thể xoá tài khoản quản trị','ADMIN_DELETE');
+
+  await prisma.$transaction([
+    // Người này từng duyệt lệnh nạp/rút của người khác: gỡ tham chiếu, giữ lại lịch sử đó.
+    prisma.walletRequest.updateMany({where:{reviewedById:id},data:{reviewedById:null,reviewedAt:null}}),
+    prisma.session.deleteMany({where:{userId:id}}),
+    prisma.dailyClaim.deleteMany({where:{userId:id}}),
+    prisma.gameRound.deleteMany({where:{userId:id}}),
+    prisma.walletRequest.deleteMany({where:{userId:id}}),
+    prisma.walletLedger.deleteMany({where:{userId:id}}),
+    prisma.user.delete({where:{id}})
+  ]);
+  res.json({ok:true,username:user.username});
+}));
+
 // ==================== BANNERS ====================
 router.get('/banners', asyncRoute(async (_req, res) => {
   const items = await getAllBannersAdmin();
