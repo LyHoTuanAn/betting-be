@@ -3,12 +3,20 @@
  *
  * Module này cố ý không chạm vào CSDL hay hộp thư: nó chỉ nhận một email đã đọc
  * sẵn và trả về giao dịch, nhờ vậy toàn bộ phần dễ sai — regex — kiểm thử được
- * mà không cần mail server.
+ * mà không cần mail server. Mẫu email thật nằm ở `test/fixtures/timo-credit.html`.
  *
- * Chưa có mẫu email thật của Timo nên các mẫu regex dưới đây được viết rộng để
- * bắt cả những cách trình bày phổ biến của ngân hàng Việt Nam (tiếng Việt lẫn
- * tiếng Anh, số tiền dùng dấu chấm hoặc dấu phẩy). Khi có email thật, chỉnh
- * trong đúng file này là đủ — không nơi nào khác phụ thuộc vào định dạng email.
+ * Email thật của Timo có dạng:
+ *   "Tài khoản Spend Account vừa tăng 5.000 VND vào 10/09/2026 09:38.
+ *    Số dư hiện tại: 5.000 VND.
+ *    Mô tả: gghbb FT26253904002496."
+ *
+ * Ba điểm quyết định cách viết các mẫu dưới đây:
+ *  - Số tiền KHÔNG có nhãn, nó nằm ngay sau chữ "tăng"; và ngay dòng dưới còn
+ *    một số tiền thứ hai ("Số dư hiện tại") tuyệt đối không được bắt nhầm.
+ *  - Ngân hàng nối mã tham chiếu FT… vào cuối nội dung người chuyển tự ghi, nên
+ *    nội dung gần như không bao giờ khớp nguyên chuỗi với username.
+ *  - Chữ tiếng Việt có dấu ("Mô tả", "vừa tăng") nên mọi so khớp đều chạy trên
+ *    bản đã bỏ dấu, thay vì nhồi lớp dấu vào từng regex.
  */
 
 export type RawEmail={from?:string;subject?:string;text?:string;html?:string;date:Date};
@@ -16,18 +24,45 @@ export type ParsedDeposit={bankTransactionId:string;amount:number;transferConten
 
 /** Giới hạn username ở auth.routes.ts — dùng lại để dò username trong nội dung CK. */
 const USERNAME_RE=/^[a-z0-9_]{4,24}$/;
+/** Mã tham chiếu liên ngân hàng (FT + số) do ngân hàng tự nối vào nội dung. */
+const BANK_REF_RE=/^ft\d{6,}$/i;
 
-/** Email phải có ít nhất một dấu hiệu là tiền VÀO, nếu không sẽ bị bỏ qua. */
-const CREDIT_HINTS=[/ti[eề]n\s*v[aà]o/i,/ghi\s*c[oó]/i,/nh[aậ]n\s*[dđ]C?[uư][oợ]c/i,/b[aá]o\s*c[oó]/i,/credit(ed)?/i,/money\s*in/i,/incoming/i,/\+\s*[\d.,]+/];
-/** Dấu hiệu tiền RA — thấy là loại ngay, tránh cộng nhầm giao dịch trừ tiền. */
-const DEBIT_HINTS=[/ti[eề]n\s*ra/i,/ghi\s*n[ợo]\b/i,/tr[ừu]\s*ti[eề]n/i,/thanh\s*to[aá]n/i,/debit(ed)?/i,/money\s*out/i,/outgoing/i,/chuy[eể]n\s*[dđ]i\b/i];
+/**
+ * Bỏ dấu tiếng Việt nhưng GIỮ NGUYÊN độ dài chuỗi, để vị trí khớp trên bản đã
+ * bỏ dấu trỏ đúng vào bản gốc — nhờ đó nội dung chuyển khoản lưu lại vẫn còn dấu.
+ */
+function fold(value:string){
+  let out='';
+  for(const ch of value){
+    if(ch==='đ'){out+='d';continue}
+    if(ch==='Đ'){out+='D';continue}
+    const base=ch.normalize('NFD').replace(/[̀-ͯ]/g,'');
+    out+=base.length===ch.length?base:ch;
+  }
+  return out;
+}
 
-const AMOUNT_LABEL=/(?:s[oố]\s*ti[eề]n|amount|credit\s*amount|gi[aá]\s*tr[iị]\s*giao\s*d[iị]ch)\s*[:\-]?\s*([+\-]?\s*[\d.,]+)\s*(?:vn[dđ]|đ|vnd)?/i;
-const CONTENT_LABEL=/(?:n[oộ]i\s*dung(?:\s*chuy[eể]n\s*kho[aả]n|\s*giao\s*d[iị]ch)?|di[eễ]n\s*gi[aả]i|content|description|message|remark|mo\s*ta)\s*[:\-]?\s*(.+)/i;
-const TXN_LABEL=/(?:m[aã]\s*(?:giao\s*d[iị]ch|gd|tham\s*chi[eế]u)|s[oố]\s*tham\s*chi[eế]u|transaction\s*(?:id|no|code)|trans\s*id|reference(?:\s*no)?|ref)\s*[:\-]?\s*([A-Za-z0-9._\-\/]{4,80})/i;
-const TIME_LABEL=/(?:th[oờ]i\s*gian(?:\s*giao\s*d[iị]ch)?|ng[aà]y\s*gi[oờ]|date\s*&?\s*time|time|date)\s*[:\-]?\s*([\d]{1,2}[\/\-][\d]{1,2}[\/\-][\d]{4}(?:[\s,]+[\d]{1,2}:[\d]{2}(?::[\d]{2})?)?)/i;
-/** Mã dạng FT… thường xuất hiện trần trong nội dung, không kèm nhãn. */
+// Cách Timo diễn đạt tiền vào / tiền ra. Số tiền bám ngay sau động từ nên không
+// thể lẫn với "Số dư hiện tại" ở dòng kế tiếp.
+const TIMO_CREDIT=/(?:vua\s+)?tang\s+([\d.,]+)\s*(?:vnd|d)\b/i;
+const TIMO_DEBIT=/(?:vua\s+)?(?:giam|tru)\s+([\d.,]+)\s*(?:vnd|d)\b/i;
+
+/** Các ngân hàng khác thường có nhãn rõ ràng; giữ lại để không khoá cứng vào Timo. */
+const AMOUNT_LABEL=/(?:so\s*tien|amount|credit\s*amount|gia\s*tri\s*giao\s*dich)\s*[:\-]?\s*([+\-]?\s*[\d.,]+)\s*(?:vnd|d)?/i;
+
+const CREDIT_HINTS=[/tien\s*vao/i,/ghi\s*co/i,/bao\s*co/i,/nhan\s*duoc/i,/vua\s*tang/i,/credit(ed)?/i,/money\s*in/i,/incoming/i,/\+\s*[\d.,]+/];
+const DEBIT_HINTS=[/tien\s*ra/i,/ghi\s*no\b/i,/tru\s*tien/i,/thanh\s*toan/i,/vua\s*giam/i,/debit(ed)?/i,/money\s*out/i,/outgoing/i,/chuyen\s*di\b/i];
+
+// `d` để lấy được vị trí nhóm bắt, phục vụ cắt lại từ chuỗi gốc còn dấu.
+const CONTENT_LABEL=/(?:noi\s*dung(?:\s*chuyen\s*khoan|\s*giao\s*dich)?|dien\s*giai|mo\s*ta|content|description|message|remark)\s*[:\-]?\s*(.+)/di;
+
+const TXN_LABEL=/(?:ma\s*(?:giao\s*dich|gd|tham\s*chieu)|so\s*tham\s*chieu|transaction\s*(?:id|no|code)|trans\s*id|\breference(?:\s*no)?\b|\bref\b)\s*[:\-]?\s*([A-Za-z0-9._\-\/]{4,80})/i;
+/** Mã FT… thường xuất hiện trần trong nội dung, không kèm nhãn. */
 const BARE_TXN=/\b(FT[A-Z0-9]{6,40})\b/i;
+
+const TIME_LABEL=/(?:thoi\s*gian(?:\s*giao\s*dich)?|ngay\s*gio|date\s*&?\s*time|\btime\b|\bdate\b)\s*[:\-]?\s*([\d]{1,2}[\/\-][\d]{1,2}[\/\-][\d]{4}(?:[\s,]+[\d]{1,2}:[\d]{2}(?::[\d]{2})?)?)/i;
+/** Timo viết "… vào 10/09/2026 09:38." */
+const TIME_BARE=/\bvao\s+([\d]{1,2}[\/\-][\d]{1,2}[\/\-][\d]{4}(?:[\s,]+[\d]{1,2}:[\d]{2}(?::[\d]{2})?)?)/i;
 
 /**
  * Ngân hàng Việt Nam ghi giờ theo giờ Việt Nam nhưng hiếm khi ghi kèm múi giờ.
@@ -76,64 +111,68 @@ function parseVnTime(raw:string,fallback:Date){
   return Number.isNaN(date.getTime())?fallback:date;
 }
 
-/** Chỉ lấy phần giá trị trên cùng một dòng với nhãn, tránh nuốt cả dòng kế tiếp. */
-function firstLineValue(value:string){
-  return (value.split('\n')[0]||'').trim().replace(/\s{2,}/g,' ');
+/** Chỉ lấy phần giá trị trên cùng một dòng với nhãn, và bỏ dấu chấm cuối câu. */
+function cleanContent(value:string){
+  return (value.split('\n')[0]||'').trim().replace(/\s{2,}/g,' ').replace(/[.\s]+$/,'');
 }
 
 export function parseBankEmail(email:RawEmail):ParsedDeposit|null{
-  const body=[email.subject||'',email.text||(email.html?htmlToText(email.html):'')].join('\n');
-  if(!body.trim())return null;
+  const original=[email.subject||'',email.text||(email.html?htmlToText(email.html):'')].join('\n');
+  if(!original.trim())return null;
+  // So khớp trên bản bỏ dấu (giữ nguyên độ dài) rồi cắt lại từ bản gốc.
+  const body=fold(original);
 
-  const amountMatch=body.match(AMOUNT_LABEL);
-  const txnMatch=body.match(TXN_LABEL)||body.match(BARE_TXN);
+  const debitMatch=body.match(TIMO_DEBIT);
+  const creditMatch=body.match(TIMO_CREDIT);
+  if(debitMatch&&!creditMatch)return null;
+
+  const amountRaw=creditMatch?.[1]??body.match(AMOUNT_LABEL)?.[1];
   const contentMatch=body.match(CONTENT_LABEL);
+  const txnMatch=body.match(TXN_LABEL)||body.match(BARE_TXN);
   // Thiếu bất kỳ mảnh nào trong ba mảnh này thì không đủ căn cứ để cộng tiền,
   // và cũng không được đoán — bỏ qua email, để nó nằm lại hộp thư cho admin.
-  if(!amountMatch||!txnMatch||!contentMatch)return null;
+  if(!amountRaw||!contentMatch?.[1]||!txnMatch?.[1])return null;
 
-  const rawAmount=amountMatch[1];
-  const rawContent=contentMatch[1];
-  const rawTxn=txnMatch[1];
-  if(!rawAmount||!rawContent||!rawTxn)return null;
-
-  const amount=parseAmount(rawAmount);
+  const amount=parseAmount(amountRaw);
   if(!Number.isFinite(amount)||amount<=0)return null;
 
-  const signedNegative=/^\s*-/.test(rawAmount);
+  const signedNegative=/^\s*-/.test(amountRaw);
+  const isCredit=!!creditMatch||CREDIT_HINTS.some(pattern=>pattern.test(body));
   const isDebit=signedNegative||DEBIT_HINTS.some(pattern=>pattern.test(body));
-  const isCredit=CREDIT_HINTS.some(pattern=>pattern.test(body));
   if(isDebit||!isCredit)return null;
 
-  const transferContent=firstLineValue(rawContent);
+  // Cắt nội dung từ chuỗi gốc để giữ lại dấu tiếng Việt người chuyển đã ghi.
+  const span=contentMatch.indices?.[1];
+  const rawContent=span?original.slice(span[0],span[1]):contentMatch[1];
+  const transferContent=cleanContent(rawContent);
   if(!transferContent)return null;
 
-  const timeMatch=body.match(TIME_LABEL);
+  const timeRaw=body.match(TIME_LABEL)?.[1]??body.match(TIME_BARE)?.[1];
   return {
-    bankTransactionId:rawTxn.trim().toUpperCase(),
+    bankTransactionId:txnMatch[1].trim().toUpperCase(),
     amount:Math.round(amount),
     transferContent:transferContent.slice(0,255),
-    transactionTime:timeMatch?.[1]?parseVnTime(timeMatch[1],email.date):email.date,
+    transactionTime:timeRaw?parseVnTime(timeRaw,email.date):email.date,
     emailSubject:(email.subject||'').slice(0,255)
   };
 }
 
-const stripDiacritics=(value:string)=>value.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D');
-
 /**
- * SRS mục 5 khớp `users.username = transfer_content`. Thực tế ngân hàng hay chèn
- * thêm tiền tố ("CT DEN:...") và hậu tố (mã tham chiếu) vào nội dung, nên ngoài
- * ứng viên khớp nguyên chuỗi — luôn được ưu tiên đầu danh sách đúng như SRS —
- * hàm này trả thêm từng token hợp lệ để service dò tiếp. Nếu không, gần như mọi
- * lần chuyển khoản thật đều rơi vào UNMATCHED.
+ * SRS mục 5 khớp `users.username = transfer_content`. Email Timo thật cho thấy
+ * nội dung luôn bị ngân hàng nối thêm mã tham chiếu ("gghbb FT26253904002496"),
+ * nên ngoài ứng viên khớp nguyên chuỗi — vẫn được ưu tiên đứng đầu đúng như SRS
+ * — hàm này trả thêm từng token hợp lệ để service dò tiếp.
  */
 export function extractUsernameCandidates(transferContent:string):string[]{
-  const normalized=stripDiacritics(transferContent).toLowerCase();
+  const normalized=fold(transferContent).toLowerCase();
   const whole=normalized.trim().replace(/\s+/g,' ');
   const candidates:string[]=[];
   if(USERNAME_RE.test(whole))candidates.push(whole);
   for(const token of normalized.split(/[^a-z0-9_]+/)){
     if(USERNAME_RE.test(token)&&!candidates.includes(token))candidates.push(token);
   }
-  return candidates;
+  // Bỏ mã tham chiếu ngân hàng, nhưng chỉ khi còn ứng viên khác: nếu nội dung
+  // chỉ có mỗi mã đó thì giữ lại còn hơn không có gì để dò.
+  const withoutRefs=candidates.filter(candidate=>!BANK_REF_RE.test(candidate));
+  return withoutRefs.length?withoutRefs:candidates;
 }

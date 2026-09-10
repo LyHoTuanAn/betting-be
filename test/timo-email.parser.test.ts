@@ -1,5 +1,16 @@
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {describe,expect,it} from 'vitest';
 import {parseBankEmail,extractUsernameCandidates} from '../src/services/timo-email.parser.js';
+
+/** Email thật do Timo gửi (đã giải mã quoted-printable như mailparser trả về). */
+const timoHtml=readFileSync(fileURLToPath(new URL('./fixtures/timo-credit.html',import.meta.url)),'utf8');
+const timoEmail={
+  from:'support@timo.vn',
+  subject:'Thông báo thay đổi số dư tài khoản',
+  date:new Date('2026-09-10T02:38:42.000Z'),
+  html:timoHtml
+};
 
 const received=new Date('2026-09-10T07:32:05.000Z');
 
@@ -149,5 +160,40 @@ describe('extractUsernameCandidates',()=>{
 
  it('ứng viên khớp cả chuỗi được ưu tiên đứng đầu',()=>{
   expect(extractUsernameCandidates('teddy123')[0]).toBe('teddy123');
+ });
+});
+
+describe('email thật của Timo',()=>{
+ it('bóc đúng cả bốn trường từ email Timo thật',()=>{
+  expect(parseBankEmail(timoEmail)).toEqual({
+   bankTransactionId:'FT26253904002496',
+   amount:5_000,
+   transferContent:'gghbb FT26253904002496',
+   transactionTime:new Date('2026-09-10T09:38:00+07:00'),
+   emailSubject:'Thông báo thay đổi số dư tài khoản'
+  });
+ });
+
+ it('không nhầm "Số dư hiện tại" thành số tiền giao dịch',()=>{
+  // Email Timo có hai số tiền bằng nhau; đổi số dư để lộ ra nếu bắt nhầm dòng.
+  const parsed=parseBankEmail({...timoEmail,html:timoHtml.replace('Số dư hiện tại: 5.000 VND','Số dư hiện tại: 12.345.000 VND')});
+  expect(parsed?.amount).toBe(5_000);
+ });
+
+ it('email báo tiền ra ("vừa giảm") bị bỏ qua',()=>{
+  const parsed=parseBankEmail({...timoEmail,html:timoHtml.replace('vừa tăng 5.000 VND','vừa giảm 5.000 VND')});
+  expect(parsed).toBeNull();
+ });
+
+ it('lấy được username người chơi từ mô tả có mã FT ngân hàng nối thêm',()=>{
+  const candidates=extractUsernameCandidates('gghbb FT26253904002496');
+  expect(candidates).toContain('gghbb');
+  // Mã tham chiếu ngân hàng không được coi là ứng viên username: nó chỉ làm
+  // tăng nguy cơ khớp nhầm chứ không bao giờ là tên người chơi thật.
+  expect(candidates).not.toContain('ft26253904002496');
+ });
+
+ it('tên khách hàng trong lời chào không bị nhầm thành nội dung chuyển khoản',()=>{
+  expect(parseBankEmail(timoEmail)?.transferContent).not.toMatch(/Ly Ho Tuan An/i);
  });
 });

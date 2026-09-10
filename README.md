@@ -107,6 +107,12 @@ Chống cộng trùng dựa vào `UNIQUE(BankDeposit.bankTransactionId)`, nên �
 cùng một email bao nhiêu lần cũng không cộng hai lần. Nội dung không khớp được
 người chơi nào (hoặc khớp nhiều người) thì lưu `UNMATCHED` để admin xử lý tay.
 
+Parser đã khớp với email thật của Timo (`test/fixtures/timo-credit.html`):
+số tiền nằm sau chữ "vừa tăng" chứ không có nhãn, ngay dưới là "Số dư hiện tại"
+không được bắt nhầm, và nội dung chuyển khoản bị ngân hàng nối thêm mã tham
+chiếu — ví dụ `Mô tả: gghbb FT26253904002496`, trong đó `gghbb` là username còn
+`FT26253904002496` là `bankTransactionId`.
+
 Worker mặc định TẮT; bật bằng `EMAIL_READER_ENABLED=1` cùng các biến `IMAP_*`
 trong `.env` (Gmail cần App Password). Xem `.env.example`.
 
