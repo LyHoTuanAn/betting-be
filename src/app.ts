@@ -15,8 +15,11 @@ import contentRoutes from './routes/content.routes.js';
 export function createApp(){
  const app=express();app.set('trust proxy',1);app.disable('x-powered-by');app.use(requestId);
  app.use(helmet());app.use(cors({origin:config.FRONTEND_ORIGIN,credentials:false}));app.use(express.json({limit:'100kb'}));
- app.get('/',(_req,res)=>res.json({status:'online',service:'GoldZone API',version:'2.0.0',health:'/api/health'}));
- app.get('/api/health',(_req,res)=>res.json({status:'ok',time:new Date().toISOString()}));
+ // Render đặt sẵn RENDER_GIT_COMMIT; lộ 7 ký tự đầu để biết production đang
+ // chạy đúng commit nào mà không phải đăng nhập vào dashboard.
+ const commit=(process.env.RENDER_GIT_COMMIT||process.env.GIT_COMMIT||'local').slice(0,7);
+ app.get('/',(_req,res)=>res.json({status:'online',service:'GoldZone API',version:'2.0.0',commit,health:'/api/health'}));
+ app.get('/api/health',(_req,res)=>res.json({status:'ok',commit,time:new Date().toISOString()}));
  app.use('/api/auth',rateLimit(20,60_000),authRoutes);
  app.use('/api/content',rateLimit(120,60_000),contentRoutes);
  app.use('/api',userRoutes);
