@@ -60,7 +60,7 @@ model User {
   passwordHash     String
   role             Role            @default(PLAYER)
   status           UserStatus      @default(ACTIVE)
-  balance          BigInt          @default(50000)
+  balance          BigInt          @default(0)
   /// Phần của `balance` đang bị giữ cho các yêu cầu rút PENDING.
   /// Số dư tiêu được = balance - lockedBalance.
   lockedBalance    BigInt          @default(0)

@@ -26,10 +26,8 @@ export async function register(input: {username:string;displayName:string;passwo
   if (exists) throw new AppError(409, 'Tên đăng nhập đã tồn tại', 'USERNAME_EXISTS');
   const passwordHash = await bcrypt.hash(input.password, 12);
   let user;
-  try{user = await prisma.$transaction(async tx => {
-    const created = await tx.user.create({data:{username:input.username,displayName:input.displayName,passwordHash}});
-    await tx.walletLedger.create({data:{userId:created.id,type:'WELCOME_BONUS',amount:created.balance,balanceAfter:created.balance,description:'Quà chào mừng thành viên mới: 50.000 vàng'}});
-    return created;
+  try{user = await prisma.user.create({
+    data:{username:input.username,displayName:input.displayName,passwordHash,balance:0n,lockedBalance:0n}
   });}catch(error){if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==='P2002')throw new AppError(409,'Tên đăng nhập đã tồn tại','USERNAME_EXISTS');throw error}
   return {...await issueSession(user,req),user:publicUser(user)};
 }
