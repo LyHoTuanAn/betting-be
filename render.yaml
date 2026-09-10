@@ -2,6 +2,10 @@ services:
   - type: web
     name: goldzone-backend
     env: docker
+    # LƯU Ý: gói free ngủ sau ~15 phút không có request, worker đọc email cũng
+    # ngủ theo. Không mất giao dịch (lần thức dậy sau vẫn quét thư CHƯA ĐỌC
+    # trong EMAIL_LOOKBACK_DAYS ngày), nhưng tiền vào có thể chậm hàng giờ.
+    # Muốn cộng tiền trong vòng 1 phút thì phải lên gói trả phí.
     plan: free
     region: singapore
     dockerfilePath: ./Dockerfile
@@ -27,3 +31,34 @@ services:
         value: "4"
       - key: FISH_START_COUNTDOWN_MS
         value: "30000"
+
+      # Hạn mức rút tiền
+      - key: WITHDRAW_MIN
+        value: "50000"
+      - key: WITHDRAW_MAX
+        value: "100000000"
+
+      # Worker đọc email báo có của Timo (SRS mục 18).
+      # Thiếu khai báo ở đây thì EMAIL_READER_ENABLED mặc định là false và tiền
+      # nạp sẽ KHÔNG bao giờ được cộng tự động trên production.
+      - key: EMAIL_READER_ENABLED
+        value: "1"
+      - key: IMAP_HOST
+        value: imap.gmail.com
+      - key: IMAP_PORT
+        value: "993"
+      - key: IMAP_SECURE
+        value: "1"
+      - key: IMAP_MAILBOX
+        value: INBOX
+      - key: EMAIL_SENDER_FILTER
+        value: timo.vn
+      - key: EMAIL_POLL_INTERVAL_MS
+        value: "60000"
+      - key: EMAIL_LOOKBACK_DAYS
+        value: "7"
+      # Điền trong dashboard Render, không commit vào repo.
+      - key: IMAP_USER
+        sync: false
+      - key: IMAP_PASSWORD
+        sync: false
