@@ -36,6 +36,70 @@ export function diceOutcome(userId:string,requestId:string,bet:number,side:'T'|'
   return {game:'DICE',bet,payout,result:{side,dice,total,result,serverSeed:fair.seed,algorithm:'HMAC-SHA256',rtp:config.payoutX/2},serverProof:fair.proof};
 }
 
+/** Ô đỏ của bánh xe European; phần còn lại là đen, riêng 0 là xanh. */
+export const ROULETTE_RED=[1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36] as const;
+export type RouletteBets=Record<string,number>;
+
+const rouletteColor=(n:number)=>n===0?'green':(ROULETTE_RED as readonly number[]).includes(n)?'red':'black';
+
+/**
+ * Tổng tiền NHẬN LẠI (đã gồm tiền cược) cho một số trúng, khớp từng đồng với
+ * bảng trả thưởng của giao diện. Số 0 làm thua mọi cửa ngoài cược thẳng — đó
+ * chính là toàn bộ lợi thế nhà cái của roulette European.
+ */
+export function roulettePayout(bets:RouletteBets,winningNumber:number,config:GameConfig<'ROULETTE'>){
+  const n=winningNumber,color=rouletteColor(n);
+  let total=0;
+  for(const [key,amount] of Object.entries(bets)){
+    if(!amount||amount<=0)continue;
+    const straight=Number(key);
+    if(Number.isInteger(straight)&&String(straight)===key.trim()){
+      if(straight===n)total+=amount*config.straightX;
+      continue;
+    }
+    const dozen=key==='1st 12'?n>=1&&n<=12:key==='2nd 12'?n>=13&&n<=24:key==='3rd 12'?n>=25&&n<=36:null;
+    if(dozen!==null){if(dozen)total+=amount*config.dozenX;continue}
+    const even=key==='1-18'?n>=1&&n<=18
+      :key==='19-36'?n>=19&&n<=36
+      :key==='EVEN'?n>0&&n%2===0
+      :key==='ODD'?n>0&&n%2!==0
+      :key==='RED'?color==='red'
+      :key==='BLACK'?color==='black':null;
+    if(even!==null&&even)total+=amount*config.evenMoneyX;
+  }
+  return Math.floor(total);
+}
+
+/** Danh sách cửa hợp lệ; route dùng để chặn key rác trước khi trừ tiền. */
+export const ROULETTE_OUTSIDE=['1st 12','2nd 12','3rd 12','1-18','19-36','EVEN','ODD','RED','BLACK'] as const;
+export const isRouletteBetKey=(key:string)=>
+  (ROULETTE_OUTSIDE as readonly string[]).includes(key)||/^(?:[0-9]|[12][0-9]|3[0-6])$/.test(key);
+
+/**
+ * RTP của nhóm cửa có lợi nhất cho người chơi. Với bộ tham số chuẩn cả ba nhóm
+ * đều bằng 36/37; lấy giá trị lớn nhất vì đó là mức nhà cái thực sự phải chịu
+ * khi admin chỉnh lệch các hệ số.
+ */
+export const rouletteRtp=(config:GameConfig<'ROULETTE'>)=>Math.max(
+  config.straightX/37,
+  config.dozenX*12/37,
+  config.evenMoneyX*18/37
+);
+
+export function rouletteOutcome(userId:string,requestId:string,bets:RouletteBets,config:GameConfig<'ROULETTE'>):Outcome {
+  const fair=fairRandom(userId,requestId);
+  // Lấy số từ digest riêng thay vì fair.value để phép chia lấy dư trải đều 37 ô.
+  const digest=createHmac('sha256',fair.seed).update('roulette').digest();
+  const winningNumber=digest.readUInt32BE(0)%37;
+  const bet=Object.values(bets).reduce((sum,amount)=>sum+amount,0);
+  const payout=roulettePayout(bets,winningNumber,config);
+  return {
+    game:'ROULETTE',bet,payout,
+    result:{winningNumber,color:rouletteColor(winningNumber),bets,serverSeed:fair.seed,algorithm:'HMAC-SHA256',rtp:rouletteRtp(config)},
+    serverProof:fair.proof
+  };
+}
+
 export function fishOutcome(userId:string,requestId:string,power:number,fishKind:keyof typeof fishCatalog|'miss',config:GameConfig<'FISH'>):Outcome {
   const fair=fairRandom(userId,requestId),base=fishKind==='miss'?0:fishCatalog[fishKind];
   const payout=base?Math.floor(base+power*config.powerBonus):0;

@@ -13,8 +13,25 @@ import adminRoutes from './routes/admin.routes.js';
 import contentRoutes from './routes/content.routes.js';
 
 export function createApp(){
- const app=express();app.set('trust proxy',1);app.disable('x-powered-by');app.use(requestId);
- app.use(helmet());app.use(cors({origin:config.FRONTEND_ORIGIN,credentials:false}));app.use(express.json({limit:'100kb'}));
+  const app=express();app.set('trust proxy',1);app.disable('x-powered-by');app.use(requestId);
+  app.use(helmet());
+  const allowedOrigins = [
+    config.FRONTEND_ORIGIN,
+    'https://betting-fe-sable.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173'
+  ].filter(Boolean);
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: false
+  }));
+  app.use(express.json({limit:'100kb'}));
  // Render đặt sẵn RENDER_GIT_COMMIT; lộ 7 ký tự đầu để biết production đang
  // chạy đúng commit nào mà không phải đăng nhập vào dashboard.
  const commit=(process.env.RENDER_GIT_COMMIT||process.env.GIT_COMMIT||'local').slice(0,7);

@@ -1,7 +1,7 @@
 import {Router,type Request} from 'express';
 import {z} from 'zod';
 import {asyncRoute, AppError, jsonSafe} from '../lib/http.js';
-import {fishCatalog,fishOutcome,diceOutcome,play,slotOutcome} from '../services/game.service.js';
+import {fishCatalog,fishOutcome,diceOutcome,play,slotOutcome,rouletteOutcome,isRouletteBetKey} from '../services/game.service.js';
 import {loadGames,requireEnabledGame,assertBet,type GameConfig} from '../services/game-catalog.service.js';
 import {prisma} from '../lib/prisma.js';
 
@@ -30,6 +30,31 @@ router.post('/dice/play',asyncRoute(async(req,res)=>{
   const outcome=diceOutcome(req.auth!.userId,key(req),input.bet,input.side,game.config as GameConfig<'DICE'>);
   const data=await play(req.auth!.userId,key(req),outcome),result=data.round.result as any;
   res.json({...result,payout:Number(data.round.payout),balance:data.balance,roundId:data.round.id,proof:data.round.serverProof});
+}));
+
+/**
+ * Một ván roulette là đặt nhiều cửa rồi quay đúng một lần, nên vẫn nằm gọn
+ * trong mô hình play(): tổng tiền các cửa là tiền cược, tổng trả thưởng là
+ * payout. Số trúng do server sinh — client không được phép tự quyết.
+ */
+const rouletteBody=z.object({
+  bets:z.record(z.string(),z.number().int().positive('Tiền cược mỗi cửa phải lớn hơn 0'))
+    .refine(bets=>Object.keys(bets).length>0,{message:'Bạn chưa đặt cửa nào'})
+    .refine(bets=>Object.keys(bets).every(isRouletteBetKey),{message:'Có cửa cược không hợp lệ'})
+});
+
+router.post('/roulette/spin',asyncRoute(async(req,res)=>{
+  const game=await requireEnabledGame('ROULETTE');
+  const {bets}=rouletteBody.parse(req.body);
+  // Hạn mức áp cho TỔNG tiền đặt của cả ván, không phải từng cửa.
+  assertBet(game,Object.values(bets).reduce((sum,amount)=>sum+amount,0));
+  const outcome=rouletteOutcome(req.auth!.userId,key(req),bets,game.config as GameConfig<'ROULETTE'>);
+  const data=await play(req.auth!.userId,key(req),outcome),result=data.round.result as any;
+  res.json({
+    winningNumber:result.winningNumber,color:result.color,
+    bet:Number(data.round.bet),payout:Number(data.round.payout),
+    balance:data.balance,roundId:data.round.id,proof:data.round.serverProof
+  });
 }));
 
 router.post('/fish/shoot',asyncRoute(async(req,res)=>{
