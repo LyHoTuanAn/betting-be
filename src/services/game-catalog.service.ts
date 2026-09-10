@@ -26,6 +26,11 @@ export const configSchemas = {
     straightX: z.number().min(1).max(50),
     dozenX: z.number().min(1).max(10),
     evenMoneyX: z.number().min(1).max(5)
+  }),
+  POKER: z.object({
+    smallBlind: z.number().int().min(100).max(10_000_000),
+    bigBlind: z.number().int().min(200).max(20_000_000),
+    rakeBp: z.number().int().min(0).max(1000)
   })
 } satisfies Record<GameType, z.ZodType>;
 
@@ -35,7 +40,8 @@ export const gameDefaults = {
   SLOT: {key:'SLOT',name:'NỔ HŨ HOÀNG KIM',subtitle:'Kho báu đang chờ bạn',sortOrder:0,minBet:1_000,maxBet:1_000_000,config:{jackpotBp:2,bigWinBp:80,smallWinBp:1400,jackpotX:250,bigWinX:25,smallWinX:5}},
   DICE: {key:'DICE',name:'ĐẠI CHIẾN TÀI XỈU',subtitle:'Thử vận may ngay',sortOrder:1,minBet:1_000,maxBet:10_000_000,config:{payoutX:1.98}},
   FISH: {key:'FISH',name:'BẮN CÁ ĐẠI DƯƠNG',subtitle:'Chinh phục thủy cung',sortOrder:2,minBet:100,maxBet:10_000,config:{powerBonus:.55,rtp:.98}},
-  ROULETTE: {key:'ROULETTE',name:'VÒNG QUAY CHÂU ÂU',subtitle:'Đặt cửa, quay là ăn',sortOrder:3,minBet:1_000,maxBet:10_000_000,config:{straightX:36,dozenX:3,evenMoneyX:2}}
+  ROULETTE: {key:'ROULETTE',name:'VÒNG QUAY CHÂU ÂU',subtitle:'Đặt cửa, quay là ăn',sortOrder:3,minBet:1_000,maxBet:10_000_000,config:{straightX:36,dozenX:3,evenMoneyX:2}},
+  POKER: {key:'POKER',name:"POKER TEXAS HOLD'EM",subtitle:'Đấu trí đỉnh cao',sortOrder:4,minBet:5_000,maxBet:50_000_000,config:{smallBlind:5_000,bigBlind:10_000,rakeBp:250}}
 } as const;
 
 export type Game = {

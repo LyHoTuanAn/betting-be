@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {asyncRoute, AppError, jsonSafe} from '../lib/http.js';
 import {fishCatalog,fishOutcome,diceOutcome,play,slotOutcome,rouletteOutcome,isRouletteBetKey} from '../services/game.service.js';
 import {loadGames,requireEnabledGame,assertBet,type GameConfig} from '../services/game-catalog.service.js';
+import {dealHand,actionHand,getActiveHandForUser,evaluate7Cards} from '../services/poker.service.js';
 import {prisma} from '../lib/prisma.js';
 
 const router=Router();
@@ -65,6 +66,43 @@ router.post('/fish/shoot',asyncRoute(async(req,res)=>{
   const outcome=fishOutcome(req.auth!.userId,key(req),input.power,input.fishKind,game.config as GameConfig<'FISH'>);
   const data=await play(req.auth!.userId,key(req),outcome),result=data.round.result as any;
   res.json({...result,payout:Number(data.round.payout),balance:data.balance,roundId:data.round.id,proof:data.round.serverProof});
+}));
+
+router.get('/poker/active',asyncRoute(async(req,res)=>{
+  const active=getActiveHandForUser(req.auth!.userId);
+  if(!active)return res.json({active:null});
+  const curEval=evaluate7Cards([...active.heroCards,...active.communityCards.slice(0,active.revealedCount)]);
+  res.json({
+    active:{
+      handId:active.id,
+      stage:active.stage,
+      heroHand:active.heroCards,
+      communityCards:active.communityCards.slice(0,active.revealedCount),
+      handRank:curEval.name,
+      pot:active.pot,
+      currentBet:active.currentBet,
+      totalBet:active.totalBet
+    }
+  });
+}));
+
+router.post('/poker/deal',asyncRoute(async(req,res)=>{
+  const game=await requireEnabledGame('POKER');
+  const {ante}=z.object({ante:z.number().int().positive()}).parse(req.body);
+  assertBet(game,ante);
+  const data=await dealHand(req.auth!.userId,ante,game.config as GameConfig<'POKER'>);
+  res.json(data);
+}));
+
+router.post('/poker/action',asyncRoute(async(req,res)=>{
+  const game=await requireEnabledGame('POKER');
+  const body=z.object({
+    handId:z.string().min(1),
+    action:z.enum(['check','call','raise','allin','fold']),
+    amount:z.number().int().optional()
+  }).parse(req.body);
+  const data=await actionHand(req.auth!.userId,body,game.config as GameConfig<'POKER'>);
+  res.json(data);
 }));
 
 router.get('/history',asyncRoute(async(req,res)=>{const limit=z.coerce.number().int().min(1).max(100).default(50).parse(req.query.limit),items=await prisma.gameRound.findMany({where:{userId:req.auth!.userId},orderBy:{createdAt:'desc'},take:limit});res.json({items:jsonSafe(items)})}));

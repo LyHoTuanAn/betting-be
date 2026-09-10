@@ -17,6 +17,7 @@ const theoreticalRtp=(key:GameType,config:GameConfig)=>
   key==='SLOT'?slotRtp(config as GameConfig<'SLOT'>)
   :key==='DICE'?(config as GameConfig<'DICE'>).payoutX/2
   :key==='ROULETTE'?rouletteRtp(config as GameConfig<'ROULETTE'>)
+  :key==='POKER'?1 - ((config as GameConfig<'POKER'>).rakeBp || 250) / 10_000
   :(config as GameConfig<'FISH'>).rtp;
 
 router.get('/stats',asyncRoute(async(_req,res)=>{
