@@ -18,6 +18,18 @@ export async function getWallet(userId:string){
   return walletView(user);
 }
 
+/** Quà đăng nhập hằng ngày. UNIQUE(userId, claimDate) chặn nhận hai lần/ngày. */
+export async function claimDaily(userId:string){
+  const claimDate=new Date();claimDate.setUTCHours(0,0,0,0);const amount=100_000n;
+  try{return await prisma.$transaction(async tx=>{
+    const claim=await tx.dailyClaim.create({data:{userId,claimDate,amount}});
+    const user=await tx.user.update({where:{id:userId},data:{balance:{increment:amount},version:{increment:1}}});
+    await tx.walletLedger.create({data:{userId,type:'DAILY_BONUS',amount,balanceAfter:user.balance,description:'Quà đăng nhập hằng ngày',referenceId:claim.id}});
+    return {amount:Number(amount),...walletView(user),nextAt:new Date(claimDate.getTime()+86_400_000)};
+  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});}
+  catch(error){if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==='P2002')throw new AppError(409,'Bạn đã nhận quà hôm nay','DAILY_ALREADY_CLAIMED');throw error;}
+}
+
 export async function createDeposit(userId:string,amount:number){
   if(amount<=0)throw new AppError(422,'Số tiền nạp phải lớn hơn 0','INVALID_AMOUNT');
   return prisma.walletRequest.create({data:{userId,type:'DEPOSIT',amount:BigInt(amount)}});

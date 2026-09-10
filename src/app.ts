@@ -19,7 +19,7 @@ export function createApp(){
  app.get('/api/health',(_req,res)=>res.json({status:'ok',time:new Date().toISOString()}));
  app.use('/api/auth',rateLimit(20,60_000),authRoutes);
  app.use('/api/content',rateLimit(120,60_000),contentRoutes);
- app.use('/api',requireAuth,userRoutes);
+ app.use('/api',userRoutes);
  app.use('/api/games',requireAuth,rateLimit(300,60_000),gameRoutes);
  app.use('/api/wallet',requireAuth,rateLimit(60,60_000),walletRoutes);
  app.use('/api/admin',requireAuth,requireAdmin,adminRoutes);
