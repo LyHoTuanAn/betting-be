@@ -108,6 +108,32 @@ export async function matchDepositManually(adminId:string,depositId:string,usern
   },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 }
 
+/** Tự động khớp các giao dịch nạp tiền đang UNMATCHED khi người chơi đăng ký tài khoản. */
+export async function autoMatchPendingDepositsForUser(userId:string,username:string){
+  const unmatched=await prisma.bankDeposit.findMany({where:{status:'UNMATCHED'},orderBy:{createdAt:'asc'}});
+  if(!unmatched.length)return;
+  for(const deposit of unmatched){
+    const candidates=extractUsernameCandidates(deposit.transferContent);
+    if(!candidates.includes(username.toLowerCase()))continue;
+    if(candidates.length===1||candidates[0]===username.toLowerCase()){
+      try{
+        await prisma.$transaction(async tx=>{
+          const current=await tx.bankDeposit.findUnique({where:{id:deposit.id}});
+          if(!current||current.status!=='UNMATCHED')return;
+          const updated=await tx.user.update({where:{id:userId},data:{balance:{increment:deposit.amount},version:{increment:1}}});
+          await tx.walletLedger.create({data:{
+            userId,type:'DEPOSIT',amount:deposit.amount,balanceAfter:updated.balance,
+            description:`Nạp tiền qua ${deposit.bankTransactionId} (tự động khớp khi đăng ký)`,referenceId:deposit.id
+          }});
+          await tx.bankDeposit.update({where:{id:deposit.id},data:{status:'COMPLETED',userId,matchedAt:new Date()}});
+        },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
+      }catch(err){
+        console.error('[bank-deposit] Lỗi tự động khớp nạp tiền khi đăng ký:',err);
+      }
+    }
+  }
+}
+
 /** Tài khoản Timo đang bật để hiển thị ở trang nạp tiền (SRS mục 2.1). */
 export async function getActiveBankAccount(){
   const account=await prisma.bankAccount.findFirst({where:{isActive:true},orderBy:{createdAt:'desc'}});

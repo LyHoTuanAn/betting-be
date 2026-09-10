@@ -6,6 +6,7 @@ import {Prisma} from '@prisma/client';
 import {prisma} from '../lib/prisma.js';
 import {config} from '../config.js';
 import {AppError} from '../lib/http.js';
+import {autoMatchPendingDepositsForUser} from './bank-deposit.service.js';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 export const publicUser = (user: {id:string;username:string;displayName:string;balance:bigint;role:string;createdAt:Date}) => ({id:user.id,username:user.username,displayName:user.displayName,balance:Number(user.balance),role:user.role,createdAt:user.createdAt});
@@ -29,7 +30,9 @@ export async function register(input: {username:string;displayName:string;passwo
   try{user = await prisma.user.create({
     data:{username:input.username,displayName:input.displayName,passwordHash,balance:0n,lockedBalance:0n}
   });}catch(error){if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==='P2002')throw new AppError(409,'Tên đăng nhập đã tồn tại','USERNAME_EXISTS');throw error}
-  return {...await issueSession(user,req),user:publicUser(user)};
+  await autoMatchPendingDepositsForUser(user.id, user.username).catch(() => {});
+  const freshUser = await prisma.user.findUnique({where: {id: user.id}}) || user;
+  return {...await issueSession(freshUser,req),user:publicUser(freshUser)};
 }
 
 export async function login(input: {username:string;password:string}, req: Request) {

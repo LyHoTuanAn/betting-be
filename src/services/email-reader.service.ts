@@ -19,6 +19,8 @@ export type ReaderStats={runs:number;processed:number;completed:number;unmatched
 const stats:ReaderStats={runs:0,processed:0,completed:0,unmatched:0,duplicates:0,skipped:0,errors:0,lastRunAt:null,lastError:null};
 export const readerStats=()=>({...stats});
 
+const processedUids = new Set<number>();
+
 let running=false;
 let timer:NodeJS.Timeout|null=null;
 
@@ -40,10 +42,15 @@ export async function pollOnce():Promise<ReaderStats>{
     const lock=await imap.getMailboxLock(config.IMAP_MAILBOX);
     try{
       const since=new Date(Date.now()-config.EMAIL_LOOKBACK_DAYS*86_400_000);
-      const uids=await imap.search({seen:false,since},{uid:true});
+      const searchCriteria: {since: Date; from?: string} = {since};
+      if(config.EMAIL_SENDER_FILTER){
+        searchCriteria.from = config.EMAIL_SENDER_FILTER;
+      }
+      const uids=(await imap.search(searchCriteria,{uid:true}))||[];
       if(!uids||!uids.length)return readerStats();
 
       for(const uid of uids){
+        if(processedUids.has(Number(uid)))continue;
         try{
           const message=await imap.fetchOne(String(uid),{source:true},{uid:true});
           if(!message||!message.source)continue;
@@ -57,11 +64,14 @@ export async function pollOnce():Promise<ReaderStats>{
             html:typeof mail.html==='string'?mail.html:undefined,
             date:mail.date||new Date()
           });
-          if(!parsed){stats.skipped++;
+          if(!parsed){
+            stats.skipped++;
+            processedUids.add(Number(uid));
             // Đánh dấu đã đọc kể cả khi không bóc được: nếu không, mọi thư quảng
             // cáo của ngân hàng sẽ bị parse lại mỗi phút cho đến hết đời.
             await imap.messageFlagsAdd(String(uid),['\\Seen'],{uid:true});
-            continue;}
+            continue;
+          }
 
           const outcome=await recordBankDeposit(parsed);
           stats.processed++;
@@ -69,6 +79,7 @@ export async function pollOnce():Promise<ReaderStats>{
           else if(outcome.result==='UNMATCHED')stats.unmatched++;
           else stats.duplicates++;
 
+          processedUids.add(Number(uid));
           await imap.messageFlagsAdd(String(uid),['\\Seen'],{uid:true});
         }catch(error){
           // Một email hỏng không được làm chết cả vòng quét: các thư còn lại vẫn
@@ -78,6 +89,7 @@ export async function pollOnce():Promise<ReaderStats>{
           console.error('[email-reader] không xử lý được email',uid,error);
         }
       }
+      if(processedUids.size > 5000) processedUids.clear();
       return readerStats();
     }finally{lock.release();}
   }finally{
