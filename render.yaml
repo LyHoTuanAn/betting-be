@@ -16,15 +16,15 @@ services:
       - key: PORT
         value: 3000
       - key: DATABASE_URL
-        sync: false
+        value: mysql://3f88VeV8J4CXs9C.root:iIcJhD13NgCTIVmI@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/goldzone?sslaccept=strict
       - key: JWT_ACCESS_SECRET
-        generateValue: true
+        value: goldzone-super-secret-jwt-key-minimum-32-chars-prod-2026
       - key: ACCESS_TOKEN_TTL
         value: 15m
       - key: REFRESH_TOKEN_DAYS
         value: "30"
       - key: FRONTEND_ORIGIN
-        sync: false
+        value: https://betting-fe-sable.vercel.app
       - key: FISH_ROOM_CAPACITY
         value: "6"
       - key: FISH_READY_TO_START
@@ -39,8 +39,6 @@ services:
         value: "100000000"
 
       # Worker đọc email báo có của Timo (SRS mục 18).
-      # Thiếu khai báo ở đây thì EMAIL_READER_ENABLED mặc định là false và tiền
-      # nạp sẽ KHÔNG bao giờ được cộng tự động trên production.
       - key: EMAIL_READER_ENABLED
         value: "1"
       - key: IMAP_HOST
@@ -57,8 +55,7 @@ services:
         value: "60000"
       - key: EMAIL_LOOKBACK_DAYS
         value: "7"
-      # Điền trong dashboard Render, không commit vào repo.
       - key: IMAP_USER
-        sync: false
+        value: lyhotuanan2004@gmail.com
       - key: IMAP_PASSWORD
-        sync: false
+        value: czuq lhfe laad dyeh

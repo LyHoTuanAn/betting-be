@@ -1,10 +1,11 @@
 import type {WebSocket} from 'ws';
+import {config} from '../config.js';
 import {fishCatalog,fishDamage,fishRoomShot,play} from './game.service.js';
 import {requireEnabledGame,type GameConfig} from './game-catalog.service.js';
 
-const ROOM_CAPACITY=Number(process.env.FISH_ROOM_CAPACITY||6);
-const READY_TO_START=Number(process.env.FISH_READY_TO_START||4);
-const START_COUNTDOWN_MS=Number(process.env.FISH_START_COUNTDOWN_MS||30_000);
+const ROOM_CAPACITY=Number(process.env.FISH_ROOM_CAPACITY||config.FISH_ROOM_CAPACITY||6);
+const READY_TO_START=Number(process.env.FISH_READY_TO_START||config.FISH_READY_TO_START||4);
+const START_COUNTDOWN_MS=Number(process.env.FISH_START_COUNTDOWN_MS||config.FISH_START_COUNTDOWN_MS||30_000);
 
 type FishKind=keyof typeof fishCatalog;
 

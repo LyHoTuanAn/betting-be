@@ -19,7 +19,14 @@ export const configSchemas = {
     smallWinX: z.number().min(0).max(100)
   }).refine(c => c.jackpotBp + c.bigWinBp + c.smallWinBp <= 10_000, {message: 'Tổng tỉ lệ thắng không được vượt 100%'}),
   DICE: z.object({payoutX: z.number().min(1).max(10)}),
-  FISH: z.object({powerBonus: z.number().min(0).max(5), rtp: z.number().min(.5).max(1)})
+  FISH: z.object({powerBonus: z.number().min(0).max(5), rtp: z.number().min(.5).max(1)}),
+  // Roulette European: tỉ lệ trả của ba nhóm cửa. Bộ chuẩn 36/3/2 cho RTP
+  // 36/37 ở mọi nhóm; hạ một hệ số xuống là hạ RTP đúng nhóm cửa đó.
+  ROULETTE: z.object({
+    straightX: z.number().min(1).max(50),
+    dozenX: z.number().min(1).max(10),
+    evenMoneyX: z.number().min(1).max(5)
+  })
 } satisfies Record<GameType, z.ZodType>;
 
 export type GameConfig<K extends GameType = GameType> = z.infer<(typeof configSchemas)[K]>;
@@ -27,7 +34,8 @@ export type GameConfig<K extends GameType = GameType> = z.infer<(typeof configSc
 export const gameDefaults = {
   SLOT: {key:'SLOT',name:'NỔ HŨ HOÀNG KIM',subtitle:'Kho báu đang chờ bạn',sortOrder:0,minBet:1_000,maxBet:1_000_000,config:{jackpotBp:2,bigWinBp:80,smallWinBp:1400,jackpotX:250,bigWinX:25,smallWinX:5}},
   DICE: {key:'DICE',name:'ĐẠI CHIẾN TÀI XỈU',subtitle:'Thử vận may ngay',sortOrder:1,minBet:1_000,maxBet:10_000_000,config:{payoutX:1.98}},
-  FISH: {key:'FISH',name:'BẮN CÁ ĐẠI DƯƠNG',subtitle:'Chinh phục thủy cung',sortOrder:2,minBet:100,maxBet:10_000,config:{powerBonus:.55,rtp:.98}}
+  FISH: {key:'FISH',name:'BẮN CÁ ĐẠI DƯƠNG',subtitle:'Chinh phục thủy cung',sortOrder:2,minBet:100,maxBet:10_000,config:{powerBonus:.55,rtp:.98}},
+  ROULETTE: {key:'ROULETTE',name:'VÒNG QUAY CHÂU ÂU',subtitle:'Đặt cửa, quay là ăn',sortOrder:3,minBet:1_000,maxBet:10_000_000,config:{straightX:36,dozenX:3,evenMoneyX:2}}
 } as const;
 
 export type Game = {

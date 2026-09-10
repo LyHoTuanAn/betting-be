@@ -21,6 +21,7 @@ enum GameType {
   SLOT
   DICE
   FISH
+  ROULETTE
 }
 
 enum LedgerType {
