@@ -43,7 +43,7 @@ docker compose logs -f backend
 
 ## Kiến trúc
 
-- `prisma/schema.prisma`: user, session, sổ cái ví, ván game, yêu cầu nạp/rút và quà ngày.
+- `prisma/schema.prisma`: user, session, sổ cái ví, ván game, yêu cầu rút, giao dịch nạp từ ngân hàng, tài khoản nhận tiền và quà ngày.
 - `prisma/migrations`: SQL migration có thể deploy trên các môi trường.
 - `src/services`: xác thực, game, transaction ví và duyệt thanh toán.
 - `src/routes`: validate request bằng Zod và ánh xạ REST API.
@@ -62,9 +62,14 @@ docker compose logs -f backend
 | POST | `/games/fish/shoot` | Bắn cá, RTP thiết kế 92% |
 | GET | `/games/history`, `/games/verify/:id` | Lịch sử và proof |
 | POST | `/wallet/daily-bonus` | Quà duy nhất mỗi ngày |
-| POST/GET | `/wallet/deposit`, `/wallet/withdraw`, `/wallet/requests` | Yêu cầu ví |
+| GET | `/wallet` | Số dư: tổng / khả dụng / đang khoá |
+| GET | `/wallet/deposit-info` | Tài khoản Timo và nội dung chuyển khoản |
+| GET | `/wallet/transactions`, `/wallet/deposits`, `/wallet/withdrawals` | Lịch sử ví |
+| POST | `/wallet/withdraw` | Tạo yêu cầu rút (khoá tiền ngay) |
 | GET | `/games/catalog` | Danh sách game admin đang bật, kèm hạn mức cược |
-| GET/PATCH | `/admin/wallet/requests` | Admin duyệt nạp/rút |
+| GET/POST | `/admin/withdrawals`, `/admin/withdrawals/:id/approve|reject` | Duyệt hoặc từ chối yêu cầu rút |
+| GET/POST | `/admin/deposits`, `/admin/deposits/:id/match` | Giao dịch nạp và khớp tay giao dịch chưa khớp |
+| GET/PUT | `/admin/bank-account` | Tài khoản Timo nhận tiền |
 | PATCH | `/admin/users/:id/status` | Khóa/mở tài khoản |
 | GET | `/admin/stats`, `/admin/users` | Số liệu tổng quan và danh sách người chơi |
 | GET/PATCH | `/admin/games`, `/admin/games/:key` | Ẩn/hiện, đổi tên, hạn mức cược và tỉ lệ trả thưởng từng game |
@@ -92,7 +97,23 @@ Giao diện quản trị nằm ở repo `goldzone-fe`, entry riêng tại `/admi
 
 Mọi endpoint game cần `X-Idempotency-Key`. Unique constraint `(userId, requestId)` và transaction `Serializable` ngăn trừ tiền hai lần. `SHA256(serverSeed)` của ván phải khớp `serverProof`.
 
-Tiền lưu bằng `BIGINT`; mọi biến động tạo một dòng `WalletLedger`. Rút tiền giữ số dư ngay và hoàn lại nếu bị từ chối. Quà ngày có unique constraint `(userId, claimDate)`.
+Tiền lưu bằng `BIGINT`; mọi biến động tạo một dòng `WalletLedger`. Quà ngày có unique constraint `(userId, claimDate)`.
+
+**Nạp tiền** chạy tự động: người chơi chuyển khoản vào tài khoản Timo của hệ
+thống với nội dung là chính `username` của mình. Worker `email-reader.service`
+đọc email thông báo giao dịch qua IMAP, `timo-email.parser` bóc ra số tiền / nội
+dung / mã giao dịch, rồi `bank-deposit.service` cộng tiền trong một transaction.
+Chống cộng trùng dựa vào `UNIQUE(BankDeposit.bankTransactionId)`, nên đọc lại
+cùng một email bao nhiêu lần cũng không cộng hai lần. Nội dung không khớp được
+người chơi nào (hoặc khớp nhiều người) thì lưu `UNMATCHED` để admin xử lý tay.
+
+Worker mặc định TẮT; bật bằng `EMAIL_READER_ENABLED=1` cùng các biến `IMAP_*`
+trong `.env` (Gmail cần App Password). Xem `.env.example`.
+
+**Rút tiền** làm tay: người chơi gửi yêu cầu kèm thông tin ngân hàng, hệ thống
+khoá tiền bằng `User.lockedBalance` (số tiêu được = `balance - lockedBalance`,
+áp dụng cho cả tiền cược game). Admin chuyển khoản bằng Timo rồi bấm duyệt —
+lúc đó mới trừ hẳn `balance`; nếu từ chối thì chỉ nhả khoá.
 
 Trước production, đổi secret/mật khẩu trong `.env`, dùng HTTPS và thay rate limiter bộ nhớ bằng Redis nếu chạy nhiều instance.
 
