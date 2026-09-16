@@ -7,7 +7,7 @@ import {approveWithdrawal,rejectWithdrawal} from '../services/wallet.service.js'
 import {matchDepositManually} from '../services/bank-deposit.service.js';
 import {readerStats} from '../services/email-reader.service.js';
 import {loadGames,invalidateGameCache,configSchemas,gameDefaults,type GameConfig} from '../services/game-catalog.service.js';
-import {slotRtp,rouletteRtp} from '../services/game.service.js';
+import {slotRtp,rouletteRtp,baucuaRtp} from '../services/game.service.js';
 import {getAllBannersAdmin, getAllEventsAdmin} from '../services/content.service.js';
 
 const router=Router();
@@ -18,6 +18,7 @@ const theoreticalRtp=(key:GameType,config:GameConfig)=>
   :key==='DICE'?(config as GameConfig<'DICE'>).payoutX/2
   :key==='ROULETTE'?rouletteRtp(config as GameConfig<'ROULETTE'>)
   :key==='POKER'?1 - ((config as GameConfig<'POKER'>).rakeBp || 250) / 10_000
+  :key==='BAUCUA'?baucuaRtp(config as GameConfig<'BAUCUA'>)
   :(config as GameConfig<'FISH'>).rtp;
 
 router.get('/stats',asyncRoute(async(_req,res)=>{

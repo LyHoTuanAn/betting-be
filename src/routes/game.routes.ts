@@ -1,7 +1,7 @@
 import {Router,type Request} from 'express';
 import {z} from 'zod';
 import {asyncRoute, AppError, jsonSafe} from '../lib/http.js';
-import {fishCatalog,fishOutcome,diceOutcome,play,slotOutcome,rouletteOutcome,isRouletteBetKey} from '../services/game.service.js';
+import {fishCatalog,fishOutcome,diceOutcome,play,slotOutcome,rouletteOutcome,isRouletteBetKey,baucuaOutcome,isBauCuaBetKey} from '../services/game.service.js';
 import {loadGames,requireEnabledGame,assertBet,type GameConfig} from '../services/game-catalog.service.js';
 import {dealHand,actionHand,getActiveHandForUser,evaluate7Cards} from '../services/poker.service.js';
 import {prisma} from '../lib/prisma.js';
@@ -9,10 +9,19 @@ import {prisma} from '../lib/prisma.js';
 const router=Router();
 const key=(req:Request)=>String(req.get('x-idempotency-key')||req.body.requestId||'');
 
-/** Sảnh chỉ vẽ những game admin đang bật, kèm hạn mức cược để client hiển thị đúng. */
+/**
+ * Sảnh chỉ vẽ những game admin đang bật, kèm hạn mức cược để client hiển thị đúng.
+ * Riêng bầu cua gửi kèm bảng tỉ lệ: bàn cược in sẵn "1 ăn 1 / 1 ăn 30" ngay trên
+ * từng cửa, nên admin chỉnh hệ số mà client không biết là bày số sai cho người chơi.
+ * Các game khác không gửi config vì tham số của chúng là xác suất trúng, không
+ * phải thứ bàn chơi cần in ra.
+ */
 router.get('/catalog',asyncRoute(async(_req,res)=>{
   const games=[...(await loadGames()).values()].filter(game=>game.enabled).sort((a,b)=>a.sortOrder-b.sortOrder);
-  res.json({games:games.map(({key,name,subtitle,minBet,maxBet})=>({key,name,subtitle,minBet,maxBet}))});
+  res.json({games:games.map(({key,name,subtitle,minBet,maxBet,config})=>({
+    key,name,subtitle,minBet,maxBet,
+    ...(key==='BAUCUA'?{paytable:config as GameConfig<'BAUCUA'>}:{})
+  }))});
 }));
 
 router.post('/slot/spin',asyncRoute(async(req,res)=>{
@@ -53,6 +62,31 @@ router.post('/roulette/spin',asyncRoute(async(req,res)=>{
   const data=await play(req.auth!.userId,key(req),outcome),result=data.round.result as any;
   res.json({
     winningNumber:result.winningNumber,color:result.color,
+    bet:Number(data.round.bet),payout:Number(data.round.payout),
+    balance:data.balance,roundId:data.round.id,proof:data.round.serverProof
+  });
+}));
+
+/**
+ * Bầu cua cùng dạng với roulette: đặt nhiều cửa rồi lắc đúng một lần. Ba mặt
+ * xúc xắc do server sinh, client chỉ nhận về để chạy hoạt ảnh — nếu để client
+ * tự lắc thì mở DevTools là tự chọn được kết quả.
+ */
+const baucuaBody=z.object({
+  bets:z.record(z.string(),z.number().int().positive('Tiền cược mỗi cửa phải lớn hơn 0'))
+    .refine(bets=>Object.keys(bets).length>0,{message:'Bạn chưa đặt cửa nào'})
+    .refine(bets=>Object.keys(bets).every(isBauCuaBetKey),{message:'Có cửa cược không hợp lệ'})
+});
+
+router.post('/baucua/roll',asyncRoute(async(req,res)=>{
+  const game=await requireEnabledGame('BAUCUA');
+  const {bets}=baucuaBody.parse(req.body);
+  // Hạn mức áp cho TỔNG tiền đặt của cả ván, không phải từng cửa.
+  assertBet(game,Object.values(bets).reduce((sum,amount)=>sum+amount,0));
+  const outcome=baucuaOutcome(req.auth!.userId,key(req),bets,game.config as GameConfig<'BAUCUA'>);
+  const data=await play(req.auth!.userId,key(req),outcome),result=data.round.result as any;
+  res.json({
+    dice:result.dice,faces:result.faces,counts:result.counts,isTriple:result.isTriple,
     bet:Number(data.round.bet),payout:Number(data.round.payout),
     balance:data.balance,roundId:data.round.id,proof:data.round.serverProof
   });

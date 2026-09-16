@@ -23,6 +23,7 @@ enum GameType {
   FISH
   ROULETTE
   POKER
+  BAUCUA
 }
 
 enum LedgerType {
