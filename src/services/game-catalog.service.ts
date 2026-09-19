@@ -41,7 +41,19 @@ export const configSchemas = {
     twoX: z.number().min(1).max(20),
     threeX: z.number().min(1).max(50),
     tripleX: z.number().min(1).max(100)
-  }).refine(c => c.oneX <= c.twoX && c.twoX <= c.threeX, {message: 'Hệ số trúng nhiều mặt không được thấp hơn trúng ít mặt'})
+  }).refine(c => c.oneX <= c.twoX && c.twoX <= c.threeX, {message: 'Hệ số trúng nhiều mặt không được thấp hơn trúng ít mặt'}),
+  /*
+   * Cờ cá ngựa gom vé của cả bốn nhà thành một hũ rồi chia lại, nên RTP đúng
+   * bằng phần hũ không bị nhà cái cắt — không thể đặt "về nhất ăn 5 lần vé" như
+   * bảng cũ ghi: bốn người góp 4 phần mà trả ra 5 phần là nhà cái lỗ 25% mỗi ván.
+   * Thưởng đá ngựa cũng lấy từ hũ chứ không in thêm tiền, và bị chặn trần để
+   * người về nhất không bao giờ tay trắng dù bàn đá nhau suốt ván.
+   */
+  CANGUA: z.object({
+    rakeBp: z.number().int().min(0).max(2_000),
+    kickBountyBp: z.number().int().min(0).max(2_000),
+    maxBountyShareBp: z.number().int().min(0).max(8_000)
+  })
 } satisfies Record<GameType, z.ZodType>;
 
 export type GameConfig<K extends GameType = GameType> = z.infer<(typeof configSchemas)[K]>;
@@ -52,7 +64,8 @@ export const gameDefaults = {
   FISH: {key:'FISH',name:'BẮN CÁ ĐẠI DƯƠNG',subtitle:'Chinh phục thủy cung',sortOrder:2,minBet:100,maxBet:10_000,config:{powerBonus:.55,rtp:.98}},
   ROULETTE: {key:'ROULETTE',name:'VÒNG QUAY CHÂU ÂU',subtitle:'Đặt cửa, quay là ăn',sortOrder:3,minBet:1_000,maxBet:10_000_000,config:{straightX:36,dozenX:3,evenMoneyX:2}},
   POKER: {key:'POKER',name:"POKER TEXAS HOLD'EM",subtitle:'Đấu trí đỉnh cao',sortOrder:4,minBet:5_000,maxBet:50_000_000,config:{smallBlind:5_000,bigBlind:10_000,rakeBp:250}},
-  BAUCUA: {key:'BAUCUA',name:'BẦU CUA VIP',subtitle:'Lắc bầu cua • Bão 3 con 1 ăn 30',sortOrder:5,minBet:10,maxBet:5_000_000,config:{oneX:2,twoX:3,threeX:4,tripleX:31}}
+  BAUCUA: {key:'BAUCUA',name:'BẦU CUA VIP',subtitle:'Lắc bầu cua • Bão 3 con 1 ăn 30',sortOrder:5,minBet:10,maxBet:5_000_000,config:{oneX:2,twoX:3,threeX:4,tripleX:31}},
+  CANGUA: {key:'CANGUA',name:'CỜ CÁ NGỰA VIP',subtitle:'Bàn 4 người • Đá ngựa ăn thưởng',sortOrder:6,minBet:50,maxBet:50_000,config:{rakeBp:500,kickBountyBp:300,maxBountyShareBp:4_000}}
 } as const;
 
 export type Game = {

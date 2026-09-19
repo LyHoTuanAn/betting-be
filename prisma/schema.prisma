@@ -24,6 +24,7 @@ enum GameType {
   ROULETTE
   POKER
   BAUCUA
+  CANGUA
 }
 
 enum LedgerType {

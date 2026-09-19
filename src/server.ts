@@ -12,6 +12,10 @@ import {
   joinBauCuaRoom,
   tickBauCuaRooms
 } from './services/baucua-room.service.js';
+import {
+  joinCanGuaRoom,
+  tickCanGuaRooms
+} from './services/cangua-room.service.js';
 import {requireEnabledGame,type GameConfig} from './services/game-catalog.service.js';
 import {startEmailReader,stopEmailReader} from './services/email-reader.service.js';
 
@@ -21,6 +25,7 @@ const server = app.listen(config.PORT, () => console.log(`GoldZone API listening
 const fishWss = new WebSocketServer({noServer: true});
 const rouletteWss = new WebSocketServer({noServer: true});
 const baucuaWss = new WebSocketServer({noServer: true});
+const canguaWss = new WebSocketServer({noServer: true});
 
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url || '', `http://${request.headers.host}`).pathname;
@@ -35,6 +40,10 @@ server.on('upgrade', (request, socket, head) => {
   } else if (pathname === '/ws/baucua') {
     baucuaWss.handleUpgrade(request, socket, head, ws => {
       baucuaWss.emit('connection', ws, request);
+    });
+  } else if (pathname === '/ws/cangua') {
+    canguaWss.handleUpgrade(request, socket, head, ws => {
+      canguaWss.emit('connection', ws, request);
     });
   } else {
     socket.destroy();
@@ -172,12 +181,66 @@ baucuaWss.on('connection', (socket, request) => {
   }
 });
 
+// Cờ Cá Ngựa Multiplayer WebSocket Handler
+canguaWss.on('connection', (socket, request) => {
+  try {
+    const url = new URL(request.url || '', `http://${request.headers.host}`);
+    const token = url.searchParams.get('token');
+    const payload = jwt.verify(token || '', config.JWT_ACCESS_SECRET, {issuer: 'goldzone-api', audience: 'goldzone-web'}) as jwt.JwtPayload;
+    const pending: RawData[] = [];
+    let handle = (raw: RawData) => { pending.push(raw); };
+    socket.on('message', raw => handle(raw));
+
+    void requireEnabledGame('CANGUA').then(async game => {
+      let userMeta = {id: String(payload.sub), username: '', displayName: '', avatar: '/assets/home-avatar.webp', balance: 0};
+      try {
+        const u = await prisma.user.findUnique({
+          where: {id: String(payload.sub)},
+          select: {id: true, username: true, displayName: true, balance: true}
+        });
+        if (u) userMeta = {...userMeta, id: u.id, username: u.username, displayName: u.displayName, balance: Number(u.balance)};
+      } catch (_) {}
+
+      // Mức vé do client chọn nhưng luôn bị kẹp về khoảng admin cho phép; người
+      // đặt vé khác nhau được ghép sang bàn khác vì hũ phải đều bốn nhà.
+      const asked = Number(url.searchParams.get('stake')) || game.minBet;
+      const stake = Math.min(game.maxBet, Math.max(game.minBet, Math.floor(asked)));
+
+      const session = joinCanGuaRoom(userMeta, socket, stake, {
+        minBet: game.minBet,
+        maxBet: game.maxBet,
+        config: game.config as GameConfig<'CANGUA'>
+      });
+      handle = raw => {
+        let message: any;
+        try { message = JSON.parse(raw.toString()); } catch { return socket.send(JSON.stringify({type: 'error', code: 'INVALID_MESSAGE', message: 'Dữ liệu không hợp lệ'})); }
+        if (message.type === 'ready' || message.type === 'unready') return session.setReady(message.type === 'ready');
+        if (message.type === 'leave') return socket.close(1000, 'left');
+        if (message.type === 'roll') return session.roll();
+        if (message.type === 'move') return session.move(String(message.horseId), Number(message.die));
+        if (message.type === 'emoji') return session.emoji(String(message.emoji ?? ''));
+      };
+      for (const raw of pending.splice(0)) handle(raw);
+      socket.on('pong', session.markAlive);
+      socket.on('close', session.leave);
+    }).catch(error => {
+      socket.send(JSON.stringify({type: 'error', code: error?.code || 'GAME_DISABLED', message: error?.message || 'Game Cờ Cá Ngựa đang tạm đóng'}));
+      socket.close(1013, 'game disabled');
+    });
+  } catch {
+    socket.close(1008, 'Unauthorized');
+  }
+});
+
 const fishTick = setInterval(tickFishRooms, 1000 / 60);
 const rouletteTick = setInterval(() => {
   void tickRouletteRooms();
 }, 1000);
 const baucuaTick = setInterval(() => {
   void tickBauCuaRooms();
+}, 1000);
+const canguaTick = setInterval(() => {
+  void tickCanGuaRooms();
 }, 1000);
 
 startEmailReader();
@@ -193,9 +256,11 @@ process.on('SIGINT', () => {
   clearInterval(fishTick);
   clearInterval(rouletteTick);
   clearInterval(baucuaTick);
+  clearInterval(canguaTick);
   fishWss.close();
   rouletteWss.close();
   baucuaWss.close();
+  canguaWss.close();
   void shutdown();
 });
 
@@ -203,8 +268,10 @@ process.on('SIGTERM', () => {
   clearInterval(fishTick);
   clearInterval(rouletteTick);
   clearInterval(baucuaTick);
+  clearInterval(canguaTick);
   fishWss.close();
   rouletteWss.close();
   baucuaWss.close();
+  canguaWss.close();
   void shutdown();
 });

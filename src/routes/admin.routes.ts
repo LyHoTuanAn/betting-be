@@ -19,6 +19,9 @@ const theoreticalRtp=(key:GameType,config:GameConfig)=>
   :key==='ROULETTE'?rouletteRtp(config as GameConfig<'ROULETTE'>)
   :key==='POKER'?1 - ((config as GameConfig<'POKER'>).rakeBp || 250) / 10_000
   :key==='BAUCUA'?baucuaRtp(config as GameConfig<'BAUCUA'>)
+  // Cá ngựa chia lại đúng hũ bốn nhà góp, nên phần chảy về người chơi luôn là
+  // hũ trừ hoa hồng — thưởng đá ngựa chỉ là chia lại trong hũ, không đổi RTP.
+  :key==='CANGUA'?1 - (config as GameConfig<'CANGUA'>).rakeBp / 10_000
   :(config as GameConfig<'FISH'>).rtp;
 
 router.get('/stats',asyncRoute(async(_req,res)=>{
